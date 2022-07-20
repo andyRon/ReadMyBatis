@@ -657,12 +657,136 @@ ResultHandler是**结果处理器**，结果的处理是ResultHandler接口的�
 ## 二、基础功能包源码阅读
 
 
+### 5 exceptions包
+
+exceptions包为 MyBatis定义了绝大多数异常类的父类，同时也提供了异常类的生产工厂。
+
+#### 5.1 背景知识
+
+##### Java的异常
+
+“异常”代表程序运行中遇到了**意料之外的事情**，为了**表征异常**，Java标准库中内建了一些通用的异常，这些类以 Throwable为父类。
+
+- Error及其子类，代表了 JVM自身的异常。这一类异常发生时，<u>无法通过程序来修正</u>。最可靠的方式就是尽快停止 JVM的运行。
+- Exception 及其子类，代表程序运行中发生了意料之外的事情。这些意外的事情可以被 Java异常处理机制处理。
+  - RuntimeException及其子类：这一类异常其实是程序设计的错误，<u>通过修正程序设计是可以避免的</u>，如数组越界异常、数值异常等。
+  - 非RuntimeException及其子类：这一类异常的发生通常由外部因素导致，是不可预知和避免的，如 IO异常、类型寻找异常等。
+
+![](images/image-20220719065617372.png)
+
+
+
+Error及其子类 和 RuntimeException及其子类 为**免检异常**，即不需要对这两类异常进行强制检查；
+
+其它异常（也就是非RuntimeException及其子类） 为**必检异常**，写程序时必须用 try、catch 语句将其包围起来。
+
+ Throwable主要的成员变量有 detailMessage和 cause。
+
+- detailMessage为一个字符串，用来存储异常的详细信息。
+
+- cause 为另一个 Throwable 对象，用来存储引发异常的原因。
+
+  这是因为一个异常发生时，通常引发异常的上级程序也发生异常，从而导致一连串的异常产生，叫作==**异常链**==。一个异常的 cause属性可以指向引发它的下级异常，从而将整个异常链保存下来。
+
+![](images/image-20220719071157666.png)
+
+##### 序列化与反序列化
+
+对象的序列化主要有两个目的：
+
+- 一是将对象转化成字节后保存在存储介质中，即为了持久化对象；
+- 二是将对象转化成字节后在网络上传输，即为了传输对象。
+
+在 Java中，要表明一个类的对象是可序列化的，则必须继承 **Serializable**接口或其子接口 **Externalizable**接口。
+
+序列化与反序列化过程中，要面临版本问题。例如，将一个 User类的对象 user1持久化到了硬盘中，然后增删了 User类的属性，那么此时还能将持久化在硬盘中的user1对象的序列还原成一个新的 User类的对象吗？
+
+```java
+public class User implements Serializable {
+	private static final long serialVersionUID = 1L;
+	// ....
+}
+```
+
+serialVersionUID字段叫作**序列化版本控制字段**。
+
+在反序列化过程中，如果对象字节序列中的 serialVersionUID与当前类的该值不同，则反序列化失败，否则成功。
+
+**如果没有显式地为一个类定义 serialVersionUID属性，系统就会自动生成一个**。自动生成的序列化版本控制字段与类的类名、类及其属性修饰符、接口及接口顺序、属性、构造函数等相关，其中任何一项的改变都会导致 serialVersionUID发生变化。
+
+#### 5.2 mybatis中的Exception类
+
+exceptions包中有三个异常类：IbatisException类、PersistenceException类和 TooManyResultsException类。
+
+mybatis的其它异常，分散在其它包中，这些异常类中除 RuntimeSqlException类外，均为 PersistenceException的子类。
+
+![](images/image-20220719072612980.png)
+
+IbatisException类上有@Deprecated注解，表明该类在未来可能会被废弃。
+
+通常，在规划一个项目的包结构时，可以按照以下两种方式进行包的划分：
+
+- 按照**类型**方式划分，例如将所有的接口类放入一个包，将所有的 Controller类放入一个包。这种分类方式从类型上看更为清晰，但是会将完成同一功能的多个类分散在不同的包中，不便于模块化开发。
+- 按照**功能**方式划分，例如将所有与加/解密有关的类放入一个包，将所有与 HTTP请求有关的类放入一个包。这种分类方式下，同一功能的类内聚性高，便于模块化开发，但会导致同一包内类的类型混乱。
+
+通常项目都是**同时采用这两种划分方式**。mybatis中按照类型划分的包有exceptions包、annotations包等；按照功能划分的包有logging包、plugin包。
+
+> 在项目设计和开发中，推荐**优先将功能耦合度高的类放入按照功能划分的包中，而将功能耦合度低或供多个功能使用的类放入按照类型划分的包中**。
+>
+> 类、方法、代码片段的组合与拆分等都可以参照这种思想。
+
+PersistenceException类和 TooManyResultsException类 都有四种构造方法：
+
+- 无参构造方法；
+- 传入错误信息字符串的构造方法；
+- 传入上级 Throwable实例的构造方法；
+- 传入上级 Throwable实例和错误信息字符串的构造方法。
+
+为 Throwable 类及其子类创建上述四种构造方法几乎是惯例。这样一来，无论已知几个输入参数信息，都可以方便地调用合适的构造方法创建实例。
+
+#### 5.3 ExceptionFactory类
+
+构造方法由 private修饰，确保该方法无法在类的外部被调用，也就永远无法生成该类的实例。通常，会对一些工具类、工厂类等仅提供静态方法的类进行这样的设置，因为这些类不需要实例化就可以使用。
+
+### 6 reflection包
+
+reflection包是提供反射功能的基础包。该包功能强大且与 MyBatis的业务代码耦合度低，可以直接复制到其他项目中使用。
+
+#### 6.1 背景知识
+
+##### 装饰器模式
+
+装饰器模式（又称包装模式），是一种结构型模式，是指能够在一个类的基础上增加一个装饰类（也可以叫包装类），并在装饰类中增加一些新的特性和功能。这样，通过对原有类的包装，就可以在不改变原有类的情况下为原有类增加更多的功能。
+
+装饰器模式通常的使用场景是**在一个核心基本类的基础上，提供大量的装饰类，从而使核心基本类经过不同的装饰类修饰后获得不同的功能。**
+
+##### 反射
+
+通过 Java反射，能够在类的运行过程中知道这个类有哪些属性和方法，还可以修改属性、调用方法、建立类的实例。
+
+- 在运行时判断任意一个对象所属的类；
+- 在运行时构造任意一个类的对象；
+- 在运行时修改任意一个对象的成员变量；
+- 在运行时调用任意一个对象的方法。
+
+##### Type接口及其子类
+
+`java.lang.reflect.Type`
 
 ```mermaid
 classDiagram
 	class Type {
 		<<interface>>
 	}
+	class TypeVariable {
+		<<interface>> 
+	}
+	class GenericArrayType
+	<<interface>>  GenericArrayType
+	class ParameterizedType
+	<<interface>>  ParameterizedType
+	class WildcardType
+	<<interface>>  WildcardType
 	Type <|-- Class
 	Type <|-- TypeVariable
 	Type <|-- GenericArrayType
@@ -673,8 +797,525 @@ classDiagram
 	
 ```
 
-```mermaid
+- Class类：类（枚举类型也属于类）、接口（注解也属于接口）。
+- WildcardType接口：代表通配符表达式。例如，`?` ，`？extends Number`， `？super Integerd`。
+- TypeVariable接口：类型变量的父接口。例如，`Map＜K，V＞`中的“K”“V”就是类型变量。
+- ParameterizedType接口：代表参数化的类型。例如，`Collection ＜String＞`就是参数化的类型。
+- GenericArrayType接口：它代表包含 ParameterizedType或者 TypeVariable元素的列表。
+
+> ==遇到不了解的类、方法时，直接跳转到类、方法的定义处查看其原生注释是学习Java编程、阅读项目源码非常有效的方法。==
+
+#### 6.2 对象工厂子包
+
+reflection包下的factory子包是一个对象工厂子包，该包中的类用来**==基于反射生产出各种对象==**。
+
+ObjectFactory接口的方法：
+
+- `void setProperties(Properties)`：设置工厂的属性。
+- `＜T＞ T create(Class＜T＞)`：传入一个类型，采用无参构造方法生成这个类型的实例。
+
+- `＜T＞ T create(Class＜T＞，List＜Class＜?＞＞，List＜Object＞)`：传入一个目标类型、一个参数类型列表、一个参数值列表，根据参数列表找到相应的含参构造方法生成这个类型的实例。
+
+- `＜T＞ boolean isCollection(Class＜T＞)`：判断传入的类型是否是集合类。
+
+DefaultObjectFactory 默认的对象工厂实现。其中create方法最终都调用instantiateClass 方法，它能够通过反射找到与参数匹配的构造方法，然后基于反射调用该构造方法生成一个对象。
+
+```java
+private  <T> T instantiateClass(Class<T> type, List<Class<?>> constructorArgTypes, List<Object> constructorArgs) {
+    try {
+      Constructor<T> constructor;
+      if (constructorArgTypes == null || constructorArgs == null) {
+        // 参数类型列表或参数列表有一个为null，就使用无参构造创建实例
+        constructor = type.getDeclaredConstructor();
+        try {
+          return constructor.newInstance();
+        } catch (IllegalAccessException e) {
+          // 如果发展异常，就修改构造函数的访问属性后再次尝试
+          if (Reflector.canControlMemberAccessible()) {
+            constructor.setAccessible(true);
+            return constructor.newInstance();
+          } else {
+            throw e;
+          }
+        }
+      }
+      // 根据输入参数类型查找对应的构造器
+      constructor = type.getDeclaredConstructor(constructorArgTypes.toArray(new Class[constructorArgTypes.size()]));
+      try {
+        // 采用有参构造函数创建实例
+        return constructor.newInstance(constructorArgs.toArray(new Object[constructorArgs.size()]));
+      } catch (IllegalAccessException e) {
+        if (Reflector.canControlMemberAccessible()) {
+          constructor.setAccessible(true);
+          return constructor.newInstance(constructorArgs.toArray(new Object[constructorArgs.size()]));
+        } else {
+          throw e;
+        }
+      }
+    } catch (Exception e) {
+      // 收集所有的参数类型
+      String argTypes = Optional.ofNullable(constructorArgTypes).orElseGet(Collections::emptyList)
+          .stream().map(Class::getSimpleName).collect(Collectors.joining(","));
+      // 收集所有的参数
+      String argValues = Optional.ofNullable(constructorArgs).orElseGet(Collections::emptyList)
+          .stream().map(String::valueOf).collect(Collectors.joining(","));
+      throw new ReflectionException("Error instantiating " + type + " with invalid types (" + argTypes + ") or values (" + argValues + "). Cause: " + e, e);
+    }
+  }
 ```
 
-### 5 exceptions包
+DefaultObjectFactory中还有一个 resolveInterface方法，当传入的目标类型是一个接口时，该方法可以给出一个符合该接口的实现。
 
+#### 6.3 执行器子包
+
+reflection 包下的 invoker 子包是执行器子包，该子包中的类能够**==基于反射实现对象方法的调用和对象属性的读写==**。
+
+![](images/image-20220719101406523.png)
+
+- GetFieldInvoker：负责对象属性的读操作；
+- SetFieldInvoker：负责对象属性的写操作；
+- MethodInvoker：负责对象其他方法的操作。
+
+Invoker接口的两个方法：
+
+- invoke方法，即执行方法负责完成对象方法的调用和对象属性的读写。在三个实现类中，分别是属性读取操作、属性赋值操作、方法触发操作。
+
+- getType方法，用来获取类型，对于 GetFieldInvoker和 SetFieldInvoker是获得目标属性的类型。MethodInvoker中直接返回type属性，如果一个方法有且只有一个输入参数，则 type为输入参数的类型；否则，type为方法返回值的类型。
+
+  ```java
+    public MethodInvoker(Method method) {
+      this.method = method;
+  
+      if (method.getParameterTypes().length == 1) {
+        type = method.getParameterTypes()[0];
+      } else {
+        type = method.getReturnType();
+      }
+    }
+  ```
+
+  
+
+> 阅读源码时，重点关注自己理解不够清晰的点是让自己快速理解源码的一个小技巧。
+
+#### 6.4 属性子包
+
+reflection包下的 property子包是属性子包，该子包中的类用来**完成与对象属性相关的操作**。
+
+只有三个类：PropertyCopier，PropertyTokenizer，PropertyNamer。
+
+```java
+PropertyCopier.copyBeanProperties(User.class, user1, user2);
+System.out.println(user2);
+```
+
+PropertyCopier只有一个静态方法copyBeanProperties，它原理很简单：通过反射获取类的所有属性（没有继承的属性），然后依次将这些属性值从源对象复制出来并赋给目标对象。
+
+PropertyNamer提供属性名称相关的操作功能。
+
+PropertyTokenizer 是一个属性标记器。
+
+#### 6.5 对象包装器子包
+
+reflection包下的 wrapper子包是对象包装器子包，该子包中的类**使用装饰器模式对各种类型的对象（包括基本 Bean对象、集合对象、Map对象）进行进一步的封装**，为其增加一些功能，使它们更易于使用。
+
+![](images/image-20220719105058624.png)
+
+MyBatis 也允许用户通过配置文件中的 objectWrapperFactory节点来注入新的 ObjectWrapperFactory。
+
+> reflection包中的两个类：MetaObject类和 MetaClass类
+>
+> meta 在中文中常译为“元”，在英文单词中作为词头有**“涵盖”“超越”“变换”**等多种含义。在这里，这三种含义都是存在的。例如，MetaObject类中涵盖了对应Object类中的全部信息，并经过变化和拆解得到了一些更为细节的信息。因此，可以将 MetaObject类理解为**一个涵盖对象（Object）中更多细节信息和功能的类**，称为“元对象”。同理，MetaClass就是**一个涵盖了类型（Class）中更多细节信息和功能的类**，称为“元类”。
+
+🔖
+
+#### 6.6 反射核心类
+
+Reflector 类负责对一个类进行反射解析，并将解析后的结果在属性中存储起来。
+
+![](images/image-20220719110357060.png)
+
+Reflector 类负责对一个类进行反射解析，并将解析后的结果在属性中存储起来。
+
+🔖
+
+
+
+#### 6.7 反射包装类
+
+MetaClass类和MetaObject类
+
+SystemMetaObject
+
+
+
+#### 6.8 异常拆包工具
+
+ExceptionUtil
+
+InvocationTargetException和 UndeclaredThrowableException
+
+> 很多时候读懂源码的实现并不难，但是一定要多思考源码为什么这么写。
+
+> 为什么需要给 InvocationTargetException和 UndeclaredThrowableException这两个类拆包？这两个类为什么要把其他异常包装起来？
+
+反射操作中，代理类通过反射调用目标类的方法时，目标类的方法可能抛出异常。反射可以调用各种目标方法，因此目标方法抛出的异常是多种多样无法确定的。这意味着反射操作可能抛出一个任意类型的异常。可以用 Throwable 去接收这个异常，但这无疑太过宽泛。
+
+InvocationTargetException就是为解决这个问题而设计的，当反射操作的目标方法中出现异常时，都统一包装成一个必检异常 InvocationTargetException。InvocationTargetException内部的 target 属性则保存了原始的异常。
+
+🔖
+
+
+
+#### 6.9 参数名解析器
+
+ParamNameResolver 是一个参数名解析器，用来按顺序列出方法中的虚参，并对实参进行名称标注。
+
+🔖
+
+
+
+> **断点调试法**在阅读字符串处理类的函数时十分有效，因为打断点的方式能够将字符串处理过程中的所有中间值展现出来，便于把握程序的每一步流程。
+
+#### 6.10 泛型解析器
+
+TypeParameterResolver是泛型参数解析器。
+
+> 很多情况下，弄清一个类的功能对阅读其源码十分必要。
+
+TypeParameterResolver 类的功能是帮助 MyBatis 推断出属性、返回值、输入参数中泛型的具体类型。
+
+```java
+public class TypeParameterResolverTest {
+    public static void main(String[] args) throws NoSuchMethodException {
+        Type type1 = TypeParameterResolver.resolveReturnType(User.class.getMethod("getInfo"), User.class);
+        System.out.println("User类中getInfo方法的输出结果类型\n" + type1);
+
+        Type type2 = TypeParameterResolver.resolveReturnType(User.class.getMethod("getInfo"), Student.class);
+        System.out.println("Student类中getInfo方法的输出结果类型\n" + type2);
+    }
+}
+
+class User<T> {
+    public List<T> getInfo() {
+        return null;
+    }
+}
+
+class Student extends User<Number> {
+
+}
+```
+
+```
+User类中getInfo方法的输出结果类型
+ParameterizedTypeImpl [rawType=interface java.util.List, ownerType=null, actualTypeArguments=[class java.lang.Object]]
+Student类中getInfo方法的输出结果类型
+ParameterizedTypeImpl [rawType=interface java.util.List, ownerType=null, actualTypeArguments=[class java.lang.Number]]
+```
+
+TypeParameterResolver类的三个方法：
+
+- resolveFieldType：解析属性的泛型；
+- resolveReturnType：解析方法返回值的泛型；
+- resolveParamTypes：解析方法输入参数的泛型。
+
+🔖
+
+
+
+### 7 annotations包与lang包
+
+🔖
+
+### 8 type包🔖
+
+> 归类总结是源码阅读中非常好的办法。往往越是大量的类，越是大量的方法，越有规律进行分类。
+
+type包55个类、接口的可分层6组：
+
+1. 类型处理器：1个接口、1个基础实现类、1个辅助类、43个实现类。
+
+   - TypeHandler：类型处理器接口；
+
+   - BaseTypeHandler：类型处理器的基础实现（抽象类）；
+   - TypeReference：类型参考器（抽象类）；
+   - *TypeHandler：43个类型处理器。
+
+2. 类型注册表：3个。
+
+   - SimpleTypeRegistry：基本类型注册表，内部使用 Set 维护了所有 Java 基本数据类型的集合；
+   - TypeAliasRegistry：类型别名注册表，内部使用 HashMap维护了所有类型的别名和类型的映射关系；
+   - TypeHandlerRegistry：类型处理器注册表，内部维护了所有类型与对应类型处理器的映射关系。
+
+3. 注解类：3个。
+
+   - Alias：使用该注解可以给类设置别名，设置后，别名和类型的映射关系便存入TypeAliasRegistry中；
+   - MappedJdbcTypes：有时我们想使用自己的处理器来处理某些 JDBC 类型，只需创建 BaseTypeHandler 的子类，然后在上面加上该注解，声明它要处理的JDBC类型即可；
+   - MappedTypes：有时我们想使用自己的处理器来处理某些Java类型，只需创建BaseTypeHandler的子类，然后在上面加上该注解，声明它要处理的 Java类型即可。
+
+4. 异常类：1个。
+
+   TypeException：表示与类型处理相关的异常。
+
+5. 工具类：1个。
+
+   ByteArrayUtils：提供数组转化的工具方法。
+
+6. 枚举类：1个。
+
+   JdbcType：在 Enum中定义了所有的 JDBC类型，类型来源于 java.sql.Types。
+
+#### 8.1 模板模式
+
+在模板模式中，需要使用一个抽象类定义一套操作的整体步骤（即模板），而抽象类的子类则完成每个步骤的具体实现。这样，抽象类的不同子类遵循了同样的一套模板。
+
+确定了一套操作的框架，而子类只需在此框架的基础上定义具体的实现即可。
+
+#### 8.2 类型处理器
+
+作为一个 ORM框架，**处理 Java对象和数据库关系之间的映射**是 MyBatis工作中的重要部分。
+
+![type包中的类型处理器](images/type包中的类型处理器.jpeg)
+
+在类型处理器相关类的设计中采用了模板模式，BaseTypeHandler＜T＞作为**所有类型处理器的基类，定义了模板的框架**。而在各个具体的实现类中，则实现了具体的细节。
+
+
+
+
+
+#### 8.3 类型注册表
+
+
+
+TypeHandlerRegistry类的属性：
+
+```java
+	// JDBC类型与对应类型处理器的映射  
+	private final Map<JdbcType, TypeHandler<?>> jdbcTypeHandlerMap = new EnumMap<>(JdbcType.class);
+	// Java类型与Map<JdbcType, TypeHandler<?>>的映射
+  private final Map<Type, Map<JdbcType, TypeHandler<?>>> typeHandlerMap = new ConcurrentHashMap<>();
+	// 未知类型的处理器
+  private final TypeHandler<Object> unknownTypeHandler;
+	// 键为typeHandler.getClass()，值为typeHandler。这里存储了所有的类型处理器
+  private final Map<Class<?>, TypeHandler<?>> allTypeHandlersMap = new HashMap<>();
+	// 空的 Map<JdbcType, TypeHandler<?>>，表示该Java类型没有对应的Map<JdbcType, TypeHandler<?>>
+  private static final Map<JdbcType, TypeHandler<?>> NULL_TYPE_HANDLER_MAP = Collections.emptyMap();
+	
+	// 默认的枚举类型处理器 
+  private Class<? extends TypeHandler> defaultEnumTypeHandler = EnumTypeHandler.class;
+```
+
+通过两次映射，获得一个类型的类型处理器：
+
+1. 根据传入的 Java 类型，调用 getJdbcHandlerMap 方法寻找对应的`Map<JdbcType, TypeHandler<?>>`后返回；
+
+   ```java
+   Map<JdbcType, TypeHandler<?>> jdbcHandlerMap = getJdbcHandlerMap(type);
+   ```
+
+2. 基于 jdbcTypeHandlerMap这个map，根据 JDBC类型再一映射找到对应的 TypeHandler。
+
+### 9 io包
+
+mybatis的io包提供对磁盘文件（xml）的读操作，还有对内存中类文件（class文件）的操作。
+
+
+
+#### 9.1 背景知识
+
+##### 单例模式
+
+##### 代理模式
+
+代理模式（Proxy Pattern）是指建立某一个对象的代理对象，并且由代理对象控制对原对象的引用。
+
+![](images/image-20220720191725966.png)
+
+代理模式能够实现很多功能：
+
+- 隔离功能：通过建立一个目标对象的代理对象，可以防止外部对目标对象的直接访问，这样就使得目标对象与外部隔离。我们可以在代理对象中增加**身份验证、权限验证**等功能，从而实现对目标对象的安全防护。
+- 扩展功能：对一个目标对象建立代理对象后，可以在代理对象中增加更多的扩展功能。例如，可以在代理对象中增加**日志记录**功能，这样对目标对象的访问都会被代理对象计入日志。
+- 直接替换：对一个目标对象建立代理对象后，可以直接使用代理对象完全替换目标对象，由代理对象来实现全部的功能。例如，MyBatis 中数据库操作只是一个抽象方法，但实际运行中会建立代理对象来完成数据库的读写操作。
+
+##### 静态代理
+
+静态代理就是代理模式最简单的实现。所谓“静态”，是指**被代理对象和代理对象在程序中是确定的，不会在程序运行过程中发生变化**。
+
+##### VFS
+
+VFS（Virtual File System）作为一个虚拟的文件系统将各个磁盘文件系统的差异屏蔽了起来，提供了统一的操作接口。
+
+![](images/image-20220719204311938.png)
+
+#### 9.2 VFS实现类
+
+MyBatis的 io包中 `VFS`（抽象类）的作用是**从应用服务器中找寻和读取资源文件（配置文件、类文件等）**。
+
+VFS中有两个属性分别保存了内置和用户自定义的VFS实现类：
+
+```java
+public static final Class<?>[] IMPLEMENTATIONS = { JBoss6VFS.class, DefaultVFS.class };
+
+public static final List<Class<? extends VFS>> USER_IMPLEMENTATIONS = new ArrayList<>();
+```
+
+VFS中有一个内部类VFSHolder使用单例模式，createVFS方法创建能够对外给出唯一的VFS实现类：
+
+```java
+	private static class VFSHolder {
+    static final VFS INSTANCE = createVFS();
+
+    @SuppressWarnings("unchecked")
+    static VFS createVFS() {
+      // 所有VFS实现类的列表
+      List<Class<? extends VFS>> impls = new ArrayList<>();
+      // 列表中先加入用户自定义的实现类。因此，用户自定义的优先级更高
+      impls.addAll(USER_IMPLEMENTATIONS);
+      impls.addAll(Arrays.asList((Class<? extends VFS>[]) IMPLEMENTATIONS));
+
+      VFS vfs = null;
+      // 依次生成实例，找出第一可用的
+      for (int i = 0; vfs == null || !vfs.isValid(); i++) {
+        Class<? extends VFS> impl = impls.get(i);
+        try {
+          vfs = impl.newInstance();
+          // 判断对象是否生成成功并可用
+          if (vfs == null || !vfs.isValid()) {
+            if (log.isDebugEnabled()) {
+              log.debug("VFS implementation " + impl.getName() +
+                  " is not valid in this environment.");
+            }
+          }
+        } catch (InstantiationException | IllegalAccessException e) {
+          log.error("Failed to instantiate " + impl, e);
+          return null;
+        }
+      }
+
+      if (log.isDebugEnabled()) {
+        log.debug("Using VFS adapter " + vfs.getClass().getName());
+      }
+
+      return vfs;
+    }
+  }
+```
+
+##### DefaultVFS类
+
+
+
+##### JBoss6VFS类
+
+
+
+#### 9.3 类文件的加载
+
+要把类文件加载成类，需要类加载器的支持。**ClassLoaderWrapper** 类中封装了五种类加载器，而 **Resources** 类又对 ClassLoaderWrapper 类进行了一些封装。
+
+```java
+  ClassLoader[] getClassLoaders(ClassLoader classLoader) {
+    return new ClassLoader[]{
+        classLoader,
+        defaultClassLoader,
+        Thread.currentThread().getContextClassLoader(),
+        getClass().getClassLoader(),
+        systemClassLoader};
+  }
+```
+
+五种类加载器依次是(优先级由高到低，都类文件时依次寻找，找到即可返回结果)：
+
+- 作为参数传入的类加载器，可能为 null；
+- 系统默认的类加载器，如未设置则为 null；
+- 当前线程的线程上下文中的类加载器；
+- 当前对象的类加载器；
+- 系统类加载器，在 ClassLoaderWrapper的构造方法中设置。
+
+classForName 方法根据类名找出指定类：
+
+```java
+  Class<?> classForName(String name, ClassLoader[] classLoader) throws ClassNotFoundException {
+		// 对五种类加载器依次进行尝试
+    for (ClassLoader cl : classLoader) {
+
+      if (null != cl) {
+
+        try {
+					// 当前加载能加载成功，立马返回结果
+          return Class.forName(name, true, cl);
+
+        } catch (ClassNotFoundException e) {
+          // 故意忽略该异常，5中类加载都没找到目标类，再在下面重新抛出该异常
+        }
+
+      }
+
+    }
+
+    throw new ClassNotFoundException("Cannot find class: " + name);
+
+  }
+
+```
+
+#### 9.4 ResolverUtil类
+
+ResolverUtil是一个工具类，主要功能是完成**类的筛选**。
+
+🔖
+
+### 10 logging包
+
+#### 10.1 背景知识
+
+##### 适配器模式
+
+适配器模式（Adapter Pattern）是一种结构型模式，基于该模式设计的类能够在两个或者多个不兼容的类之间起到沟通桥梁的作用。
+
+
+
+##### 日志框架与日志级别
+
+
+
+##### 基于反射的动态代理
+
+
+
+#### 10.2 Log接口
+
+
+
+#### 10.3 Log接口的实现类
+
+
+
+#### 10.4 LogFactory
+
+
+
+#### 10.5 JDBC日志打印
+
+
+
+### 11 parsing包
+
+#### 11.1 背景知识
+
+##### XML文件
+
+
+
+
+
+##### XPath
+
+
+
+#### 11.2 XML解析
+
+
+
+#### 11.3 文档解析中的变量替换
