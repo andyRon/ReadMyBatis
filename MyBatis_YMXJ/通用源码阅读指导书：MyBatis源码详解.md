@@ -1274,23 +1274,116 @@ ResolverUtil是一个工具类，主要功能是完成**类的筛选**。
 
 适配器模式（Adapter Pattern）是一种结构型模式，基于该模式设计的类能够在两个或者多个不兼容的类之间起到沟通桥梁的作用。
 
+适配器的思想在程序设计中非常常见。
 
+1. 方法适配
+
+```java
+// 方法一
+public <K, V> Map<K, V> selectMap(String statement, String mapKey) {
+  return this.selectMap(statement, null, mapKey, RowBounds.DEFAULT);
+}
+
+// 方法二
+public <K, V> Map<K, V> selectMap(String statement, Object parameter, String mapKey) {
+  return this.selectMap(statement, parameter, mapKey, RowBounds.DEFAULT);
+}
+
+// 方法三
+public <K, V> Map<K, V> selectMap(String statement, Object parameter, String mapKey, RowBounds rowBounds) {
+  // ...
+}
+```
+
+方法三是核心方法，需要四个参数。方法一和方法二充当了方法适配器的作用。这两个适配器通过为未知参数设置默认值的方式，搭建起了调用方和核心方法之间的桥梁。
+
+2. 类适配器
+
+![](images/image-20220721165615145.png)
+
+Target接口是 Client想调用的标准接口，而 Adaptee是提供服务但不符合标准接口的目标类。Adapter便是为了 Client能顺利调用 Adaptee而创建的适配器类。
+
+Adapter既实现了 Target接口又继承了 Adaptee类，从而使 Client能够与Adaptee适配：
+
+```java
+public class Adapter extends Adaptee implements Target {
+  @Override
+  public void sayHi() {
+    super.sayHello();
+  }
+}
+```
+
+3. 对象适配器
+
+![](images/image-20220721171210045.png)
+
+```java
+public class Adapter implements Target {
+  // 目标类的对象
+  private Adaptee adaptee;
+  
+  // 初始化适配器是可以指定目标类对象
+  public Adapter(Adaptee adaptee) {
+    this.adaptee = adaptee;
+  }
+  
+  @Override
+  public void sayHi() {
+    adaptee.sayHello();
+  }
+}
+```
+
+这样，Adapter可以直接将 Client要求的操作委托给目标类对象处理，也实现了Client和 Adaptee 之间的适配。而且这种适配器更为灵活一些，因为要适配的目标对象是作为初始化参数传给 Adapter的。
+
+适配器模式能够使得原本不兼容的类可以一起工作。通常情况下，如果目标类是可以修改的，则不需要使用适配器模式，直接修改目标类即可。但如果目标类是不可以修改的（例如<u>目标类由外部提供，或者目标类被众多其他类依赖必须保持不变</u>），那么适配器模式则会非常有用。
 
 ##### 日志框架与日志级别
+
+**日志框架**是一种**在==目标对象发生变化==时将相关信息记录进日志文件**的框架。
+
+Java 领域的日志框架有 <u>log4j、Logging、commons-logging、slf4j、logback</u>等。
 
 
 
 ##### 基于反射的动态代理
 
+静态代理中代理对象和被代理对象是在程序中写死的，不够灵活。具体来说，要想建立某个对象的静态代理，必须为其建立一个代理类，而且所有被代理的方法均需在代理类中直接调用。这就使得**代理类高度依赖被代理类，被代理类的任何变动都可能引发代理类的变动**。
 
+而动态代理则灵活很多，它能**在代码运行时动态地为某个对象增加代理，并且能为代理对象动态地增加方法**。
+
+基于反射的动态代理：在 Java中 java.lang.reflect包下提供了一个 Proxy类和一个 InvocationHandler接口，使用它们就可以实现动态代理。
+
+🔖
+
+对于基于反射的动态代理而言，有一个必需的条件：**被代理的对象必须有一个父接口**。
 
 #### 10.2 Log接口
 
-
+![](images/image-20220721180853930.png)
 
 #### 10.3 Log接口的实现类
 
+NoLoggingImpl
 
+StdOutImpl
+
+Slf4jLocationAwareLoggerImpl 类和 Slf4jLoggerImpl 类是Slf4jImpl 类的装饰器
+
+Log4j2AbstractLoggerImpl 类和 Log4j2LoggerImpl 类是 Log4j2Impl类的装饰器
+
+
+
+JakartaCommonsLoggingImpl
+
+Jdk14LoggingImpl
+
+Log4jImpl
+
+Log4j2Impl
+
+Slf4jImpl
 
 #### 10.4 LogFactory
 
@@ -1298,7 +1391,13 @@ ResolverUtil是一个工具类，主要功能是完成**类的筛选**。
 
 #### 10.5 JDBC日志打印
 
+ jdbc子包中的源码和之前几节的实现逻辑完全不同。
 
+MyBatis是 ORM框架，它负责数据库信息和 Java对象的互相映射操作，而不负责具体的数据库读写操作。具体的数据库读写操作是由 JDBC进行的。
+
+
+
+![](images/image-20220721181944448.png)
 
 ### 11 parsing包
 
@@ -1306,16 +1405,370 @@ ResolverUtil是一个工具类，主要功能是完成**类的筛选**。
 
 ##### XML文件
 
+**可扩展** **标记** 语言（eXtensible Markup Language，XML）是一种标记语言。所谓的==标记==是指**计算机所能理解的信息符号**，通过标记可以实现软件开发者与计算机之间的信息沟通。
 
+HTML也是一种标记语言，但是固定的，是不可扩展的。XML则可以由开发人员自由扩展定义。
 
+XML可扩展的一个重要表现就是 **XML文档的结构是可以自由定义的**。
 
+定义 XML文档的结构可以使用 **DTD**（Document Type Definition，文档类型定义后缀名为==dtd==），或者 **XML Schema**（后缀名为==xsd==）。
+
+ **XML文档的结构**：元素节点、属性节点、文本节点、文档节点等。
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<members>
+    <user type="student">
+        <id>1</id>
+        <name>jack</name>
+        <school>high</school>
+    </user>
+    <user type="student">
+        <id>2</id>
+        <name>andy</name>
+        <school>primary</school>
+    </user>
+</members>
+```
+
+第一行是**XML声明**。
+
+每一个 XML文档都必须有一个根元素。
+
+上面xml的XML Schema文档定义形式：
+
+```xml
+<:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="members">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" name="user">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="id" type="xs:unsignedByte" />
+              <xs:element name="name" type="xs:string" />
+              <xs:element name="school" type="xs:string" />
+            </xs:sequence>
+            <xs:attribute name="type" type="xs:string" />
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+```
+
+上面xml的DTD文档定义形式：
+
+```xml
+<!DOCTYPE members[
+  <!ELEMENT members(user*)>
+  <!ELEMENT user(id,name.school)>
+  <!ATTLIST user type CDATA #IMPLIED>
+  <!ELEMENT id(#PCDATA)>
+  <!ELEMENT name(#PCDATA)>
+  <!ELEMENT school(#PCDATA)>
+  ]>
+```
+
+DTD也支持使用外部 DTD文档来定义 XML文档。例如mybatis的配置文件开头：
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+        PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+```
+
+- `configuration`：表示当前 XML文档的根节点为 configuration。
+- `PUBLIC`：表示当前 XML文档采用的是公共的 DTD。
+- `-//mybatis.org//DTD Config 3.0//EN`：表示 DTD文档的信息。
+  - `-`：表示是非 ISO组织；
+  - `mybatis.org`：表示组织名称 mybatis.org；
+  - `DTD Config 3.0`：表示文本描述，包括版本号；
+  - EN：表示 DTD文档是英文。
+- `http://mybatis.org/dtd/mybatis-3-config.dtd`：表示文档的下载地址。
 
 ##### XPath
+
+XPath（XML Path Language，XML路径语言）作为一种小型的查询语言能够根据 XML结构树在树中寻找节点。
+
+XPath语法与CSS选择器或 jQuery选择器类似，它们的语法思路是想通的。
+
+![](images/image-20220721210150117.png)
+
+`javax.xml.xpath`包提供了强大的 XPath解析功能，可以基于它实现 XML的解析。
+
+```java
+String resource = "info.xml";
+DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+DocumentBuilder db = dbf.newDocumentBuilder();
+Document doc = db.parse(Thread.currentThread().getContextClassLoader().getResourceAsStream(resource));
+
+XPathFactory factory = XPathFactory.newInstance();
+XPath xPath = factory.newXPath();
+XPathExpression compile = xPath.compile("/members/user[id=2]");
+System.out.println(compile.evaluate(doc));
+```
 
 
 
 #### 11.2 XML解析
 
+MyBatis的配置文件与映射文件均是 XML文件，因此解析并读取 XML文档中的内容是 MyBatis展开后续工作的基础。
+
+MyBatis中的 parsing包就是用来进行 XML文件解析的包。
+
+解析 XML文件的过中，XPathParser类与 XNode类是两个最为关键的类：
+
+![](images/image-20220721214043634.png)
+
+
+
+> 在一个类中封装自己的解析器，这是一种非常常见的做法，如此一来这个类不需要外界的帮助便可以解析自身，即获得了自解析能力。
+
 
 
 #### 11.3 文档解析中的变量替换
+
+
+
+## 三、配置解析包源码阅读
+
+配置解析包用来实现 MyBatis 配置文件、映射文件的解析等工作，并最终为MyBatis 准备好进行数据库操作的运行环境。
+
+### 12 配置解析概述
+
+MyBatis的配置依靠两个文件来完成：
+
+1. 配置文件，包含基本配置信息。只有一个。
+2. 映射文件，里面设置了 Java对象和数据库属性之间的映射关系、数据库操作语句等。可以有多个。
+
+配置解析的过程就是**==将配置信息提取、转化，最终在 Java对象中保存的过程==**，如：
+
+![](images/image-20220722163940332.png)
+
+可以将与配置解析相关的类（含接口）分为以下两种：
+
+1. **解析器类（含接口）**：提供配置的解析功能，负责完成配置信息的提取、转化。MyBatis中这样的类有 <u>XMLConfigBuilder类、XMLMapperBuilder类、CacheRefResolver类和XMLStatementBuilder类</u>等。
+2. **解析实体类**（含接口）：提供配置的保存功能。该类在结构上与配置信息有对应关系。**配置信息最终会保存到解析实体类的属性中**。MyBatis 中这样的类有<u>Configuration类、ReflectorFactory类、Environment类、DataSource类、ParameterMap类、ParameterMapping类、Discriminator类和 SqlNode类等</u>。
+
+> 这种划分不是绝对的，一些类两者都是，既能在属性中保存信息，又能解析自身或者下层配置。
+
+mybatis配置文件中各个节点对应的解析器类和解析实体：
+
+```
+configuration			对应 Configuration 类，有XMLConfigBuilder解析
+  properties	
+  settings
+  typeAliases			TypeAliasRegistry
+  typeHandlers		TypeHandlerRegistry
+  objectFactory		ObjectFactory
+  objectWrapperFactory	ObjectWrapperFactory
+  plugins					interceptor属性对应Interceptor类
+  environments
+  	environment						Environment
+  		transactionManager
+  		dataSource					DataSource
+  databaseIdProvider			DatabaseIdProvider
+  mappers
+  	mapper					由XMLMapperBuilder解析
+```
+
+映射文件节点对应的解析器类和解析实体类：
+
+```
+mapper
+	cache-ref								由 CacheRefResolver 解析
+	cache										Cache
+	parameterMap						ParameterMap
+		parameter							ParameterMapping
+	resultMap								ResultMap
+		result								ResultMapping
+		discriminator					Discriminator
+	select									对应 MappedStatement 对象，由 XMLStatementBuilder 解析
+		SQL语句 							 对应SqlSource类，有SqlSourceBuilder解析
+		include								由 XMLIncludeTransformer 解析
+		foreach								对应SqlNode类，由其自身解析
+```
+
+> 以上没有注明解析器类的节点，由其父节点的解析器类进行解析。
+
+### 13 binding包
+
+binding包是主要用来**处理 Java方法与 SQL语句之间绑定关系**的包。两个功能：
+
+- 维护映射接口中抽象方法与数据库操作节点之间的关联关系；
+- 为映射接口中的抽象方法接入对应的数据库操作。
+
+#### 13.1 数据库操作的接入
+
+binding包中是用基于反射的动态代理，为抽象方法接入实现方法。
+
+![](images/image-20220722181632431.png)
+
+##### 数据库操作的方法化
+
+
+
+MapperMethod类将一个数据库操作语句和一个 Java方法绑定在了一起：它的MethodSignature属性保存了这个方法的详细信息；它的 SqlCommand属性持有这个方法对应的 SQL语句。
+
+![](images/image-20220722181807118.png)
+
+##### 数据库操作方法的接入
+
+
+
+#### 13.2 抽象方法与数据库操作节点的关联
+
+
+
+#### 13.3 数据库操作接入总结
+
+
+
+#### 13.4 MyBatis与Spring、Spring Boot的整合
+
+Spring在启动阶段会使用MapperScannerConfigurer类对指定包进行扫描。对于扫描到的映射接口，mybatis-spring 会将其当作MapperFactoryBean对象注册到 Spring的 Bean列表中。而 MapperFactoryBean可以给出映射接口的代理类。
+
+
+
+### 14 builder包
+
+按类型划分出来
+
+两个比较完整的功能：
+
+1. 解析 XML配置文件和映射文件， xml子包；
+2. 解析注解形式的 Mapper声明， annotation子包。
+
+#### 14.1 建造者模式
+
+
+
+使用建造者模式，对象的建造细节均交给建造者来完成，调用者只需掌控总体流程即可，而不需要了解被建造对象的细节。
+
+![](images/image-20220722182710135.png)
+
+
+
+#### 14.2 建造者基类与工具类
+
+![](images/image-20220722182733710.png)
+
+
+
+#### 14.3 SqlSourceBuilder类与StaticSqlSource类
+
+
+
+#### 14.4 CacheRefResolver类和ResultMapResolver类
+
+
+
+#### 14.5 ParameterExpression类
+
+ParameterExpression 是一个**属性解析器**，用来**将描述属性的字符串解析为键值对**的形式。
+
+
+
+#### 14.6 XML文件解析
+
+![](images/image-20220722183002476.png)
+
+##### XML文件的声明解析
+
+
+
+##### 配置文件解析
+
+
+
+##### 数据库操作语句解析
+
+
+
+##### Statement解析
+
+**数据库操作节点**（四类：select、insert、update、delete）的解析由XMLStatementBuilder完成。
+
+
+
+##### 引用解析
+
+
+
+#### 14.7 注解映射的解析
+
+
+
+### 15 mapping包
+
+众多的解析实体类
+
+主要功能：
+
+- SQL语句处理功能；
+- 输出结果处理功能；
+- 输入参数处理功能；
+- 多数据库种类处理功能；
+- 其他功能。
+
+#### 15.1 SQL语句处理功能
+
+MappedStatement类表示的是数据库操作节点（select、insert、update、delete四类节点）内的所有内容；
+
+SqlSource类是数据库操作标签中包含的 SQL语句；
+
+BoundSql类则是SqlSource类进一步处理的产物。
+
+![](images/image-20220722183850365.png)
+
+
+
+#### 15.2 输出结果处理功能
+
+resultType
+
+resultMap
+
+![](images/image-20220722184141196.png)
+
+
+
+#### 15.3 输入参数处理功能
+
+parameterMap
+
+
+
+#### 15.4 多数据库种类处理功能
+
+
+
+#### 15.5 其他功能
+
+Environment类
+
+CacheBuilder类是缓存建造者，它负责完成缓存对象的创建。
+
+其它一些枚举类：
+
+- FetchType：延迟加载设置；
+- ParameterMode：参数类型，指输入参数、输出参数等；
+- ResultFlag：返回结果中属性的特殊标志，表示是否为 id属性、是否为构造器属性；
+- ResultSetType：结果集支持的访问方式；
+- SqlCommandType：SQL命令类型，指增、删、改、查等；
+- StatementType：SQL语句种类，指是否为预编译的语句、是否为存储过程等。
+
+
+
+### 16 scripting包
+
+MyBatis支持非常灵活的 SQL语句组建方式，可以使用 foreach、where、if等标签完成复杂的语句组装工作。
+
+这些标签语句最终还是会被解析成为最基本的 SQL语句才能被数据库接收，这个解析过程主要由 scripting包完成。
+
+#### 16.1 OGNL
+
+OGNL（Object Graph Navigation Language，对象图导航语言）是一种功能强大的表达式语言（Expression Language，EL），通过它能够完成**从集合中选取对象、读写对象的属性、调用对象和类的方法、表达式求值与判断等**操作。
