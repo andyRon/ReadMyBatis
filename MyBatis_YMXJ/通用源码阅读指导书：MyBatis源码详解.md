@@ -1772,3 +1772,275 @@ MyBatis支持非常灵活的 SQL语句组建方式，可以使用 foreach、wher
 #### 16.1 OGNL
 
 OGNL（Object Graph Navigation Language，对象图导航语言）是一种功能强大的表达式语言（Expression Language，EL），通过它能够完成**从集合中选取对象、读写对象的属性、调用对象和类的方法、表达式求值与判断等**操作。
+
+
+
+#### 16.2 语言驱动接口及语言驱动注册表
+
+LanguageDriver
+
+![](images/image-20220722213913612.png)
+
+
+
+#### 16.3 SQL节点树的组建
+
+
+
+#### 16.4 SQL节点树的解析
+
+
+
+### 17 datasource包
+
+MyBatis 作为 ORM 框架，向上连接着 Java 业务应用，向下则连接着数据库。datasource包则是 MyBatis**与数据库交互**时涉及的最为主要的包。
+
+
+
+#### 17.1 背景知识
+
+##### java.sql包和javax.sql包
+
+java.sql 和 javax.sql 共同为 Java 提供了强大的 JDBC 能力。
+
+1. java.sql包（JDBC核心 API包）
+
+![](images/image-20220722215346562.png)
+
+**不同种类的数据库厂商只需根据自身数据库特点开发相应的 Driver实现类**，并通过 DriverManager进行注册即可。这样，基于 JDBC便可以连接不同公司不同种类的数据库。
+
+通常完成一次数据库操作的流程：
+
+- 建立 DriverManager对象。
+- 从 DriverManager对象中获取 Connection对象。
+- 从 Connection对象中获取 Statement对象。
+- 将 SQL 语句交给 Statement 对象执行，并获取返回的结果，结果通常放在ResultSet中。
+
+
+
+2. javax.sql包（ JDBC扩展 API包）
+
+javax.sql提供了 DataSource接口，通过它可以获取面向数据源的Connection对象，与 java.sql 中直接使用 DriverManager 建立连接的方式相比更为灵活。
+
+javax.sql还提供了**连接池、语句池、分布式事务**等方面的诸多特性。
+
+建议用DataSource来代替DriverManager获取Connection对象，于是一条 SQL语句的执行过程：
+
+- 建立 DataSource对象。
+- 从 DataSource对象中获取 Connection对象。
+- 从 Connection对象中获取 Statement对象。
+- 将 SQL 语句交给 Statement 对象执行，并获取返回的结果，结果通常放在ResultSet中。
+
+##### DriverManager
+
+
+
+##### javax.sql.DataSource
+
+
+
+##### Connection
+
+
+
+##### Statement
+
+
+
+#### 17.2 数据源工厂接口
+
+![](images/image-20220722220735941.png)
+
+
+
+#### 17.3 JNDI数据源工厂
+
+JNDI（Java Naming and Directory Interface）是 **==Java命名和目录接口==**，它能够为 Java应用程序提供命名和目录访问的接口，可以将其理解为一个**命名规范**。在使用该规范为资源命名并将资源放入环境（Context）中后，可以通过名称从环境中**查找（lookup）**对应的资源。
+
+jndi子包提供了一个 JNDI数据源工厂**JndiDataSourceFactory**，它的作用是**从环境中找出指定的 JNDI数据源**。
+
+
+
+#### 17.4 非池化数据源及工厂
+
+
+
+#### 17.5 池化数据源
+
+
+
+#### 17.6 论数据源工厂
+
+
+
+## 四、核心操作包源码阅读
+
+### 18 jdbc包
+
+十分独立，整个 jdbc包中的所有类都没有被外部引用过。
+
+
+
+### 19 cache包
+
+MyBatis 缓存使得每次数据库查询请求都会先经过缓存系统的过滤，只有在没有命中缓存的情况下才会去查询物理数据库。
+
+> cache包只是提供了缓存能力，不涉及具体缓存功能的使用。
+
+#### 19.1 背景知识
+
+##### Java对象的引用级别
+
+
+
+##### ReferenceQueue类
+
+
+
+#### 19.2 cache包结构与Cache接口
+
+cache包是典型的装饰器模式应用案例，在 impl子包中存放了实现类，在decorators子包中存放了众多装饰器类。
+
+![](images/image-20220722223313303.png)
+
+
+
+#### 19.3 缓存键
+
+
+
+#### 19.4 缓存的实现类
+
+
+
+#### 19.5 缓存装饰器
+
+
+
+#### 19.6 缓存的组建
+
+组建缓存的过程就是根据需求为缓存的基本实现增加各种装饰的过程，该过程在CacheBuilder中完成。
+
+
+
+#### 19.7 事务缓存
+
+
+
+#### 19.8 MyBatis缓存机制
+
+
+
+### 20 transaction包
+
+事务管理的包，jdbc子包中包含基于 JDBC进行事务管理的类，managed子包中包含基于容器进行事务管理的类。
+
+
+
+### 21 cursor包
+
+#### 21.1 Iterable接口与Iterator接口
+
+
+
+#### 21.2 MyBatis中游标的使用
+
+
+
+### 22 executor包
+
+ MyBatis中最重要的包。
+
+执行器包，作为 MyBatis 的核心将其他各个包凝聚在了一起。
+
+executor包将所有的操作串接在了一起，通过 session包向外暴露出一套完整的服务。
+
+#### 22.1 背景知识
+
+
+
+#### 22.2 主键自增功能
+
+![](images/image-20220722225023745.png)
+
+#### 22.3 懒加载功能
+
+
+
+
+
+![](images/image-20220722225259113.png)
+
+
+
+#### 22.4 语句处理功能
+
+
+
+![](images/image-20220722225335911.png)
+
+
+
+#### 22.5 参数处理功能
+
+
+
+
+
+#### 22.6 结果处理功能
+
+
+
+![](images/image-20220722225434864.png)
+
+
+
+#### 22.7 结果集处理功能
+
+
+
+#### 22.8 执行器
+
+![](images/image-20220722225520014.png)
+
+
+
+#### 22.9 错误上下文
+
+
+
+### 23 session包
+
+session包是整个 MyBatis应用的对外接口包，是离用户最近的包。
+
+
+
+### 24 plugin包
+
+MyBatis还提供插件功能，允许其他开发者为 MyBatis开发插件以扩展 MyBatis的功能。
+
+
+
+#### 24.1 责任链模式
+
+
+
+#### 24.2 MyBatis插件开发
+
+> 要想了解一个功能模块的源码，一种简单的办法是先学会使用这个模块。
+
+
+
+#### 24.3 MyBatis拦截器平台
+
+![](images/image-20220722231548532.png)
+
+
+
+
+
+#### 24.4 MyBatis拦截器链与拦截点
+
+
+
+MyBatis 中一共只有四个类的对象可以被拦截器替换，它们分别是ParameterHandler、ResultSetHandler、StatementHandler 和 Executor。
