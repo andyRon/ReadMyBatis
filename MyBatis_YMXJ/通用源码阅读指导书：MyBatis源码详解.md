@@ -7,6 +7,8 @@
 
 [MyBatis中文详尽注释版](https://github.com/yeecode/MyBatisCN)
 
+[GitHub - tuguangquan/mybatis: mybatis源码中文注释](https://github.com/tuguangquan/mybatis)
+
 [作者网站](https://yeecode.top/)
 
 [mybatis-3](https://github.com/mybatis/mybatis-3)
