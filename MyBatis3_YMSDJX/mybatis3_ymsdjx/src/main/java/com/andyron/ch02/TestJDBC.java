@@ -1,6 +1,7 @@
 package com.andyron.ch02;
 
 import com.andyron.common.DbUtils;
+import org.apache.ibatis.datasource.DataSourceFactory;
 import org.apache.ibatis.datasource.unpooled.UnpooledDataSource;
 import org.apache.ibatis.datasource.unpooled.UnpooledDataSourceFactory;
 import org.junit.Test;
@@ -68,7 +69,7 @@ public class TestJDBC {
     public void testMybatisDataSourceFactory() {
         DbUtils.initData();
         try {
-            UnpooledDataSourceFactory dsf = new UnpooledDataSourceFactory();
+            DataSourceFactory dsf = new UnpooledDataSourceFactory();
             Properties properties = new Properties();
             InputStream configStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("database.properties");
             properties.load(configStream);
@@ -128,8 +129,8 @@ public class TestJDBC {
                 throw new RuntimeException(e);
             }
         }
-
     }
+
 
 
 }

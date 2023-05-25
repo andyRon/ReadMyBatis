@@ -29,6 +29,11 @@ public abstract class DbUtils {
         return conn;
     }
 
+    /**
+     * 打印结果
+     * @param resultSet
+     * @throws Exception
+     */
     public static void dumpRS(ResultSet resultSet) throws Exception {
         ResultSetMetaData metaData = resultSet.getMetaData();
         int columCount = metaData.getColumnCount();
