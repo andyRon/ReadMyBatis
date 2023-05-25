@@ -529,6 +529,7 @@ public abstract class AbstractSQL<T> {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
+    // 调用SQLStatement的sql方法生成sql语句
     sql().sql(sb);
     return sb.toString();
   }
@@ -558,9 +559,9 @@ public abstract class AbstractSQL<T> {
     }
 
   }
-
+  // 用于描述一个SQL语句
   private static class SQLStatement {
-
+    // SQL语句的类型
     public enum StatementType {
 
       DELETE,
@@ -608,6 +609,7 @@ public abstract class AbstractSQL<T> {
     }
 
     StatementType statementType;
+    // 用于记录SQL实例中SELECT()、UPADTE()等方法调用参数
     List<String> sets = new ArrayList<>();
     List<String> select = new ArrayList<>();
     List<String> tables = new ArrayList<>();
@@ -623,6 +625,7 @@ public abstract class AbstractSQL<T> {
     List<String> lastList = new ArrayList<>();
     List<String> columns = new ArrayList<>();
     List<List<String>> valuesList = new ArrayList<>();
+    // 是否包含distinct关键字
     boolean distinct;
     String offset;
     String limit;
@@ -633,6 +636,15 @@ public abstract class AbstractSQL<T> {
       valuesList.add(new ArrayList<>());
     }
 
+    /**
+     * SQL语句拼接
+     * @param builder SQL字符串构建对象
+     * @param keyword SQL关键字
+     * @param parts SQL关键字子句内容
+     * @param open SQL关键字后开始字符
+     * @param close SQL关键字后结束字符
+     * @param conjunction SQL连接关键字，通常为AND或OR
+     */
     private void sqlClause(SafeAppendable builder, String keyword, List<String> parts, String open, String close,
         String conjunction) {
       if (!parts.isEmpty()) {
@@ -645,6 +657,7 @@ public abstract class AbstractSQL<T> {
         String last = "________";
         for (int i = 0, n = parts.size(); i < n; i++) {
           String part = parts.get(i);
+          // 如果SQL关键字对应的子句内容不为OR或AND，则追加连接关键字 // TODO
           if (i > 0 && !part.equals(AND) && !part.equals(OR) && !last.equals(AND) && !last.equals(OR)) {
             builder.append(conjunction);
           }

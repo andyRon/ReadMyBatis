@@ -45,18 +45,27 @@ public class ScriptRunner {
       .compile("^\\s*((--)|(//))?\\s*(//)?\\s*@DELIMITER\\s+([^\\s]+)", Pattern.CASE_INSENSITIVE);
 
   private final Connection connection;
-
+  // SQL异常是否中断程序执行
   private boolean stopOnError;
+  // 是否抛出SQLWarning警告
   private boolean throwWarning;
+  // 是否自动提交
   private boolean autoCommit;
+  // true，批量执行文件中的SQL语句
+  // false，逐条执行SQL语句，默认SQL语句以分号分割
   private boolean sendFullScript;
+  // 是否去除Windows系统换行符中的\r
   private boolean removeCRs;
+  // 设置Statement属性是否支持转义处理
   private boolean escapeProcessing = true;
 
+  // 日志输出位置，默认标准输入输出，即控制台
   private PrintWriter logWriter = new PrintWriter(System.out);
   private PrintWriter errorLogWriter = new PrintWriter(System.err);
 
+  // 脚本文件中SQL语句的分隔符，默认为分号
   private String delimiter = DEFAULT_DELIMITER;
+  // 是否支持SQL语句分隔符，单独一行
   private boolean fullLineDelimiter;
 
   public ScriptRunner(Connection connection) {
@@ -151,6 +160,7 @@ public class ScriptRunner {
       BufferedReader lineReader = new BufferedReader(reader);
       String line;
       while ((line = lineReader.readLine()) != null) {
+        // 调用handleLine()方法处理每行内容
         handleLine(command, line);
       }
       commitConnection();
@@ -212,19 +222,19 @@ public class ScriptRunner {
 
   private void handleLine(StringBuilder command, String line) throws SQLException {
     String trimmedLine = line.trim();
-    if (lineIsComment(trimmedLine)) {
+    if (lineIsComment(trimmedLine)) {  // 判断改行是否是SQL注释
       Matcher matcher = DELIMITER_PATTERN.matcher(trimmedLine);
       if (matcher.find()) {
         delimiter = matcher.group(5);
       }
       println(trimmedLine);
-    } else if (commandReadyToExecute(trimmedLine)) {
-      command.append(line, 0, line.lastIndexOf(delimiter));
+    } else if (commandReadyToExecute(trimmedLine)) { // 判断改行是否包含分号
+      command.append(line, 0, line.lastIndexOf(delimiter)); // 获取该行中分号之前的内容
       command.append(LINE_SEPARATOR);
       println(command);
-      executeStatement(command.toString());
+      executeStatement(command.toString());  // 执行该条完整的SQL语句
       command.setLength(0);
-    } else if (trimmedLine.length() > 0) {
+    } else if (trimmedLine.length() > 0) {  // 改行种不包含分号，说明这条SQL语句未结束，追加本行内容到之前读取的内容中
       command.append(line);
       command.append(LINE_SEPARATOR);
     }
