@@ -959,39 +959,441 @@ ProxyFactory主要用于实现MyBatis的懒加载功能。
 
 ### 4.1 使用MyBatis操作数据库
 
+1. 编写MyBatis的主配置文件
 
+
+
+2. 新增Java实体与数据库记录建立映射
+
+
+
+3. 定义用于执行SQL的Mapper
+
+
+
+4. 通过MyBatis提供的API执行我们定义的Mapper
+
+两种方式：
+
+```java
+InputStream inputStream = Resources.getResourceAsStream("mybatis-config.xml");
+SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(inputStream);
+SqlSession sqlSession = sqlSessionFactory.openSession();
+UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+
+List<User> users = userMapper.listAllUser();
+System.out.println(JSON.toJSONString(users));
+```
+
+```java
+Reader mybatisConfig = Resources.getResourceAsReader("mybatis-config.xml");
+SqlSessionManager sqlSessionManager = SqlSessionManager.newInstance(mybatisConfig);
+sqlSessionManager.startManagedSession();
+UserMapper mapper = sqlSessionManager.getMapper(UserMapper.class);
+System.out.println(JSON.toJSONString(mapper.listAllUser()));
+```
+
+SqlSessionManager使用了单例模式。
 
 ### 4.2 MyBatis核心组件
 
+SqlSession是MyBatis提供的面向用户的操作数据库API。
 
+![](images/mybatis-core.svg)
+
+
+
+- `Configuration`：用于描述MyBatis的主配置信息，其他组件需要获取配置信息时，直接通过Configuration对象获取。除此之外，MyBatis在应用启动时，将**Mapper配置信息、类型别名、TypeHandler**等注册到Configuration组件中，其他组件需要这些信息时，也可以从Configuration对象中获取。
+- `MappedStatement`：MappedStatement用于描述Mapper中的SQL配置信息，是对Mapper XML配置文件中`<select|update|delete|insert>`等标签或者`@Select`/`@Update`等注解配置信息的封装。
+- `SqlSession`：SqlSession是MyBatis提供的面向用户的API，表示和数据库交互时的会话对象，用于完成数据库的增删改查功能。SqlSession是Executor组件的外观，目的是**对外提供易于理解和使用的数据库操作接口**。
+- `Executor`：Executor是MyBatis的**==SQL执行器==**，MyBatis中对数据库所有的增删改查操作都是由Executor组件完成的。
+- `StatementHandler`：StatementHandler封装了对JDBC Statement对象的操作，比如为Statement对象设置参数，调用Statement接口提供的方法与数据库交互，等等。
+- `ParameterHandler`：当MyBatis框架使用的Statement类型为`CallableStatement`和`PreparedStatement`时，ParameterHandler用于为Statement对象参数占位符设置值。
+- `ResultSetHandler`：ResultSetHandler封装了对JDBC中的`ResultSet`对象操作，当执行SQL类型为SELECT语句时，ResultSetHandler用于将查询结果转换成Java对象。
+- `TypeHandler`：TypeHandler是MyBatis中的**==类型处理器==**，用于处理Java类型与JDBC类型之间的映射。它的作用主要体现在能够根据Java类型调用PreparedStatement或CallableStatement对象对应的setXXX()方法为Statement对象设置值，而且能够根据Java类型调用ResultSet对象对应的getXXX()获取SQL执行结果。
+
+实际上SqlSession是Executor组件的外观，目的是为用户提供更友好的数据库操作接口，这是设计模式中**==外观模式==**的典型应用。🔖
+
+真正执行SQL操作的是Executor组件，Executor可以理解为SQL执行器，它会使用StatementHandler组件对JDBC的Statement对象进行操作。当Statement类型为CallableStatement和PreparedStatement时，会通过ParameterHandler组件为参数占位符赋值。ParameterHandler组件中会根据Java类型找到对应的TypeHandler对象，TypeHandler中会通过Statement对象提供的setXXX()方法（例如setString()方法）为Statement对象中的参数占位符设置值。StatementHandler组件使用JDBC中的Statement对象与数据库完成交互后，当SQL语句类型为SELECT时，MyBatis通过ResultSetHandler组件从Statement对象中获取ResultSet对象，然后将ResultSet对象转换为Java对象。
 
 ### 4.3 Configuration详解
 
-MyBatis框架的配置信息有两种，一种是配置MyBatis框架属性的主配置文件；另一种是配置执行SQL语句的Mapper配置文件。
+MyBatis框架的配置信息有两种，
+
+- 一种是配置MyBatis框架属性的主配置文件；
+- 另一种是配置执行SQL语句的Mapper配置文件。
+
+Configuration类中定义了一系列的属性用来控制MyBatis运行时的行为，这些属性的值可以在MyBatis主配置文件中通过`<setting>`标签指定。[官方配置信息](https://mybatis.org/mybatis-3/zh/configuration.html)
+
+Configuration除了提供属性控制MyBatis的行为外，还作为容器存放TypeHandler（类型处理器）、TypeAlias（类型别名）、Mapper接口及Mapper SQL配置信息。
+
+```java
+protected final MapperRegistry mapperRegistry = new MapperRegistry(this);
+protected final InterceptorChain interceptorChain = new InterceptorChain();
+protected final TypeHandlerRegistry typeHandlerRegistry = new TypeHandlerRegistry(this);
+protected final TypeAliasRegistry typeAliasRegistry = new TypeAliasRegistry();
+protected final LanguageDriverRegistry languageRegistry = new LanguageDriverRegistry();
+
+protected final Map<String, MappedStatement> mappedStatements = new StrictMap<MappedStatement>("Mapped Statements collection")
+  .conflictMessageProducer((savedValue, targetValue) ->
+                           ". please check " + savedValue.getResource() + " and " + targetValue.getResource());
+protected final Map<String, Cache> caches = new StrictMap<>("Caches collection");
+protected final Map<String, ResultMap> resultMaps = new StrictMap<>("Result Maps collection");
+protected final Map<String, ParameterMap> parameterMaps = new StrictMap<>("Parameter Maps collection");
+protected final Map<String, KeyGenerator> keyGenerators = new StrictMap<>("Key Generators collection");
+
+protected final Set<String> loadedResources = new HashSet<>();
+protected final Map<String, XNode> sqlFragments = new StrictMap<>("XML fragments parsed from previous mappers");
+
+protected final Collection<XMLStatementBuilder> incompleteStatements = new LinkedList<>();
+protected final Collection<CacheRefResolver> incompleteCacheRefs = new LinkedList<>();
+protected final Collection<ResultMapResolver> incompleteResultMaps = new LinkedList<>();
+protected final Collection<MethodResolver> incompleteMethods = new LinkedList<>();
+
+protected final Map<String, String> cacheRefMap = new HashMap<>();
+```
+
+- `mapperRegistry`：用于注册Mapper接口信息，建立Mapper接口的Class对象和`MapperProxyFactory`对象之间的关系，其中MapperProxyFactory对象用于**创建Mapper动态代理对象**。
+- `interceptorChain`：用于注册MyBatis插件信息，**MyBatis插件实际上就是一个拦截器。**
+- `typeHandlerRegistry`：用于注册所有的TypeHandler，并建立Jdbc类型、JDBC类型与TypeHandler之间的对应关系。
+- `typeAliasRegistry`：用于注册所有的类型别名。
+- `languageRegistry`：用于注册LanguageDriver，LanguageDriver用于解析SQL配置，将配置信息转换为SqlSource对象。
+
+- `mappedStatements`：MappedStatement对象描述<insert|select|update|delete>等标签或者通过@Select、@Delete、@Update、@Insert等注解配置的SQL信息。MyBatis将所有的MappedStatement对象注册到该属性中，其中Key为Mapper的Id，Value为MappedStatement对象。
+- `caches`：用于注册Mapper中配置的所有缓存信息，其中Key为Cache的Id，也就是Mapper的命名空间，Value为Cache对象。
+- `resultMaps`：用于注册Mapper配置文件中通过`<resultMap>`标签配置的ResultMap信息，ResultMap用于建立Java实体属性与数据库字段之间的映射关系，其中Key为ResultMap的Id，该Id是由Mapper命名空间和`<resultMap>`标签的id属性组成的，Value为解析<resultMap>标签后得到的ResultMap对象。
+
+- `parameterMaps`：用于注册Mapper中通过`<parameterMap>`标签注册的参数映射信息。Key为ParameterMap的Id，由Mapper命名空间和`<parameterMap>`标签的id属性构成，Value为解析`<parameterMap>`标签后得到的ParameterMap对象。
+- `keyGenerators`：用于注册KeyGenerator，KeyGenerator是MyBatis的**主键生成器**，MyBatis中提供了3种KeyGenerator，即`Jdbc3KeyGenerator`（数据库自增主键）、`NoKeyGenerator`（无自增主键）、`SelectKeyGenerator`（通过select语句查询自增主键，例如oracle的sequence）。
+- `loadedResources`：用于注册所有Mapper XML配置文件路径。
+- `sqlFragments`：用于注册Mapper中通过`<sql>`标签配置的SQL片段，Key为SQL片段的Id，Value为MyBatis封装的表示XML节点的XNode对象。
+
+- `incompleteStatements`：用于注册解析出现异常的XMLStatementBuilder对象。
+- `incompleteCacheRefs`：用于注册解析出现异常的CacheRefResolver对象。
+- `incompleteResultMaps`：用于注册解析出现异常的ResultMapResolver对象。
+- `incompleteMethods`：用于注册解析出现异常的MethodResolver对象。
+
+MyBatis框架启动时，会对所有的配置信息进行解析，然后将解析后的内容注册到Configuration对象的这些属性中。
 
 
+
+除此之外，Configuration组件还作为`Executor`、`StatementHandler`、`ResultSetHandler`、`ParameterHandler`组件的工厂类，用于创建这些组件的实例。这些工厂方法签名：
+
+```java
+// ParameterHandler组件工厂方法
+public ParameterHandler newParameterHandler(MappedStatement mappedStatement, Object parameterObject, BoundSql boundSql) 
+
+// ResultSetHandler组件工厂方法
+public ResultSetHandler newResultSetHandler(Executor executor, MappedStatement mappedStatement, RowBounds rowBounds, ParameterHandler parameterHandler, ResultHandler resultHandler, BoundSql boundSql) 
+
+// StatementHandler组件工厂方法
+public StatementHandler newStatementHandler(Executor executor, MappedStatement mappedStatement, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler, BoundSql boundSql)
+
+// Executor组件工厂方法
+public Executor newExecutor(Transaction transaction, ExecutorType executorType) 
+```
+
+这些工厂方法会根据MyBatis不同的配置创建对应的实现类。例如，Executor组件有4种不同的实现，分别为`BatchExecutor`、`ReuseExecutor`、`SimpleExecutor`、`CachingExecutor`，当`defaultExecutorType`的参数值为REUSE时，newExecutor()方法返回的是ReuseExecutor实例，当参数值为SIMPLE时，返回的是SimpleExecutor实例，这是典型的==工厂方法模式==的应用。
+
+MyBatis采用工厂模式创建Executor、StatementHandler、ResultSetHandler、ParameterHandler的另一个目的是**实现插件拦截逻辑**。
 
 ### 4.4 Executor详解
 
+SqlSession是MyBatis提供的操作数据库的API，但是真正执行SQL的是Executor组件。
 
+Executor接口中定义了对数据库的增删改查方法，其中query()和queryCursor()方法用于执行查询操作，update()方法用于执行插入、删除、修改操作。
+
+![](images/image-20230526123537437.png)
+
+`BaseExecutor`中定义的方法的执行流程及通用的处理逻辑，具体的方法由子类来实现，是典型的==模板方法模式==的应用。
+
+- `SimpleExecutor`是基础的Executor，能够完成基本的增删改查操作。
+- `ResueExecutor`对JDBC中的Statement对象做了缓存，当执行相同的SQL语句时，直接从缓存中取出Statement对象进行复用，避免了频繁创建和销毁Statement对象，从而提升系统性能，这是==享元思想==的应用。
+- `BatchExecutor`则会对调用同一个Mapper执行的update、insert和delete操作，调用Statement对象的批量操作功能。
+
+当MyBatis开启了二级缓存功能时，会使用`CachingExecutor`对SimpleExecutor、ResueExecutor、BatchExecutor进行装饰，为查询操作增加二级缓存功能，这是==装饰器模式==的应用。
+
+```java
+@Test
+public void testExecutor() throws IOException, SQLException {
+  InputStream inputStream = Resources.getResourceAsStream("mybatis-config.xml");
+  SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(inputStream);
+  SqlSession sqlSession = sqlSessionFactory.openSession();
+
+  Configuration configuration = sqlSession.getConfiguration();
+  // 从Configuration对象中获取描述SQL配置的MappedStatement对象
+  MappedStatement listAllUserStmt = configuration.getMappedStatement("com.andyron.ch04.mapper.UserMapper.listAllUser");
+  // 创建ReuseExecutor实例
+  Executor reuseExecutor = configuration.newExecutor(new JdbcTransaction(sqlSession.getConnection()), ExecutorType.REUSE);
+  // 调用query()方法执行查询操作
+  List<User> userList = reuseExecutor.query(listAllUserStmt, null, RowBounds.DEFAULT, Executor.NO_RESULT_HANDLER);
+
+  System.out.println(JSON.toJSONString(userList));
+}
+```
+
+Executor与数据库交互需要Mapper配置信息，MyBatis通过MappedStatement对象描述**Mapper的配置信息**，因此Executor需要一个`MappedStatement`对象作为参数。
+
+MyBatis在应用启动时，会解析所有的Mapper配置信息，将Mapper配置解析成MappedStatement对象注册到Configuration组件中，可以通过调用Configuration对象的getMappedStatement()方法获取对应的MappedStatement对象，获取MappedStatement对象后，根据SQL类型调用Executor对象的query()或者update()方法即可。
 
 ### 4.5 MappedStatement详解
+
+MyBatis通过MappedStatement描述`<select|update|insert|delete>`或者@Select、@Update等注解配置的SQL信息。
+
+MyBatis中SQL Mapper（[XML映射文件](https://mybatis.org/mybatis-3/zh/sqlmap-xml.html)）的配置中，不同类型的SQL语句需要使用对应的XML标签进行配置。这些标签提供了很多属性，用来控制每条SQL语句的执行行为。
+
+`MappedStatement`中很大部分属性对应上述的几个XML标签的属性。如：
+
+```xml
+<select
+  id="selectPerson"
+  parameterType="int"
+  parameterMap="deprecated"
+  resultType="hashmap"
+  resultMap="personResultMap"
+  flushCache="false"
+  useCache="true"
+  timeout="10"
+  fetchSize="256"
+  statementType="PREPARED"
+  resultSetType="FORWARD_ONLY">
+```
+
+MappedStatement类还有一些其他的属性：
+
+```java
+// Mapper配置文件路径
+private String resource;
+// Configuration对象的引用，方便获取MyBatis配置信息及TypeHandler、TypeAlias等信息
+private Configuration configuration;
+// 解析<select|update|insert|delete>，将SQL语句配置信息解析为SqlSource对象
+private SqlSource sqlSource;
+// 二级缓存实例，根据Mapper中的<cache>标签配置信息创建对应的Cache实现
+private Cache cache;
+// 主键生成策略，默认为Jdbc3KeyGenerator，即数据库自增主键。当配置了<selectKey>时，使用SelectKeyGenerator生成主键。
+private KeyGenerator keyGenerator;
+// <select>标签中通过resultMap属性指定ResultMap是不是嵌套的ResultMap
+private boolean hasNestedResultMaps;
+// 用于输出日志
+private Log statementLog;
+```
 
 
 
 ### 4.6 StatementHandler详解
 
+StatementHandler组件封装了对JDBC Statement的操作，例如设置Statement对象的fetchSize属性、设置查询超时时间、调用JDBC Statement与数据库交互等。
+
+```java
+public interface StatementHandler {
+  // 创建JDBC Statement对象，并完成Statement对象的属性设置
+  Statement prepare(Connection connection, Integer transactionTimeout) throws SQLException;
+  // 使用MyBatis中的ParameterHandler组件为PreparedStatement和CallableStatement参数占位符设置值
+  void parameterize(Statement statement) throws SQLException;
+  // 将SQL命令添加到批处量执行列表中
+  void batch(Statement statement) throws SQLException;
+  // 调用Statement对象的execute()方法执行更新语句
+  int update(Statement statement) throws SQLException;
+  // 执行查询语句，并使用ResultSetHandler处理查询结果集
+  <E> List<E> query(Statement statement, ResultHandler resultHandler) throws SQLException;
+  // 带游标的查询，返回Cursor对象，能够通过Iterator动态地从数据库中加载数据，适用于查询数据量较大的情况，避免将所有数据加载到内存中
+  <E> Cursor<E> queryCursor(Statement statement) throws SQLException;
+  // 获取Mapper中配置的SQL信息，BoundSql封装了动态SQL解析后的SQL文本和参数映射信息
+  BoundSql getBoundSql();
+
+  ParameterHandler getParameterHandler();
+}
+
+```
+
+![](images/image-20230526131425297.png)
+
+BaseStatementHandler是一个抽象类，封装了通用的处理逻辑及方法执行流程，具体方法的实现由子类完成，这里使用到了设计模式中的==模板方法模式==。
+
+SimpleStatementHandler封装了对JDBC Statement对象的操作，PreparedStatementHandler封装了对JDBC PreparedStatement对象的操作，而CallableStatementHandler则封装了对JDBC CallableStatement对象的操作。
+
+RoutingStatementHandler会根据Mapper配置中的statementType属性（取值为STATEMENT、PREPARED或CALLABLE）创建对应的StatementHandler实现。
+
 
 
 ### 4.7 TypeHandler详解
+
+处理JDBC类型与Java类型之间的转换比较烦琐，这种转换有两种情况：
+
+1. PreparedStatement对象为参数占位符设置值时，需要调用PreparedStatement接口中提供的一系列的setXXX()方法，将Java类型转换为对应的JDBC类型并为参数占位符赋值。
+2. 执行SQL语句获取ResultSet对象后，需要调用ResultSet对象的getXXX()方法获取字段值，此时会将JDBC类型转换为Java类型。
+
+```java
+public interface TypeHandler<T> {
+  // 为PreparedStatement对象设置参数
+  void setParameter(PreparedStatement ps, int i, T parameter, JdbcType jdbcType) throws SQLException;
+
+  // 根据列名称获取该列的值
+  T getResult(ResultSet rs, String columnName) throws SQLException;
+
+  // 根据列索引获取该列的值
+  T getResult(ResultSet rs, int columnIndex) throws SQLException;
+
+  // 获取存储过程调用结果
+  T getResult(CallableStatement cs, int columnIndex) throws SQLException;
+}
+```
+
+`BaseTypeHandler`类实现了TypeHandler接口，对调用setParameter()方法，参数为Null的情况做了通用的处理。对调用getResult()方法，从ResultSet对象或存储过程调用结果中获取列的值出现的异常做了处理。因此，当我们需要自定义TypeHandler时，只需要继承BaseTypeHandler类即可。
+
+`BaseTypeHandler`有很多很多子类，例如StringTypeHandler用于java.lang.String类型和JDBC中的CHAR、VARCHAR、LONGVARCHAR、NCHAR、NVARCHAR、LONGNVARCHAR等类型之间的转换。StringTypeHandler中的逻辑非常简单。
+
+```java
+public class StringTypeHandler extends BaseTypeHandler<String> {
+  // 调用PreparedStatement对象的setString()方法将Java中的java.lang.String类型转换为JDBC类型，并为参数占位符赋值
+  @Override
+  public void setNonNullParameter(PreparedStatement ps, int i, String parameter, JdbcType jdbcType)
+      throws SQLException {
+    ps.setString(i, parameter);
+  }
+  
+  // 调用ResultSet对象的getString()方法将JDBC中的字符串类型转为Java中的java.lang.String类型，并返回列的值
+  @Override
+  public String getNullableResult(ResultSet rs, String columnName) throws SQLException {
+    return rs.getString(columnName);
+  }
+  @Override
+  public String getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
+    return rs.getString(columnIndex);
+  }
+  @Override
+  public String getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
+    return cs.getString(columnIndex);
+  }
+}
+```
+
+![](images/iShot_2023-05-26_11.11.48.jpg)
+
+MyBatis通过`TypeHandlerRegistry`建立JDBC类型、Java类型与TypeHandler之间的映射关系（通过Map对象保存JDBC类型、Java类型与TypeHandler之间的关系）：
+
+```java
+// MyBatis通过TypeHandlerRegistry建立JDBC类型、Java类型与TypeHandler之间的映射关系
+public final class TypeHandlerRegistry {
+  // JDBC类型 <=> TypeHandler
+  private final Map<JdbcType, TypeHandler<?>> jdbcTypeHandlerMap = new EnumMap<>(JdbcType.class);
+
+  // Java类型 <=> JDBC类型 <=> TypeHandler
+  private final Map<Type, Map<JdbcType, TypeHandler<?>>> typeHandlerMap = new ConcurrentHashMap<>();
+  private final TypeHandler<Object> unknownTypeHandler;
+  // TypeHandler Class对象 <=> TypeHandler
+  private final Map<Class<?>, TypeHandler<?>> allTypeHandlersMap = new HashMap<>();
+  ...
+}
+```
 
 
 
 ### 4.8 ParameterHandler详解
 
+ParameterHandler的作用是在PreparedStatementHandler和CallableStatementHandler操作对应的Statement执行数据库交互之前为参数占位符设置值。
 
+```java
+public interface ParameterHandler {
+  // 获取执行Mapper时传入的参数对象
+  Object getParameterObject();
+
+  // 为JDBC PreparedStatement或者CallableStatement对象设置参数值
+  void setParameters(PreparedStatement ps) throws SQLException;
+}
+```
+
+ParameterHandler接口只有一个默认的实现类`DefaultParameterHandler`。
+
+```java
+@Override
+public void setParameters(PreparedStatement ps) {
+  ErrorContext.instance().activity("setting parameters").object(mappedStatement.getParameterMap().getId());
+  List<ParameterMapping> parameterMappings = boundSql.getParameterMappings();
+  if (parameterMappings != null) {
+    // 获取所有参数的映射信息
+    for (int i = 0; i < parameterMappings.size(); i++) {
+      ParameterMapping parameterMapping = parameterMappings.get(i);
+      if (parameterMapping.getMode() != ParameterMode.OUT) {
+        Object value;
+        // 参数属性名称
+        String propertyName = parameterMapping.getProperty();
+        // 根据参数属性名称获取参数值
+        if (boundSql.hasAdditionalParameter(propertyName)) { // issue #448 ask first for additional params
+          value = boundSql.getAdditionalParameter(propertyName);
+        } else if (parameterObject == null) {
+          value = null;
+        } else if (typeHandlerRegistry.hasTypeHandler(parameterObject.getClass())) {
+          value = parameterObject;
+        } else {
+          MetaObject metaObject = configuration.newMetaObject(parameterObject);
+          value = metaObject.getValue(propertyName);
+        }
+        // 获取参数对应的TypeHandler
+        TypeHandler typeHandler = parameterMapping.getTypeHandler();
+        JdbcType jdbcType = parameterMapping.getJdbcType();
+        if (value == null && jdbcType == null) {
+          jdbcType = configuration.getJdbcTypeForNull();
+        }
+        try {
+          // 调用TypeHandler的setParameter方法为Statement对象参数占位符设置值
+          typeHandler.setParameter(ps, i + 1, value, jdbcType);
+        } catch (TypeException | SQLException e) {
+          throw new TypeException("Could not set parameters for mapping: " + parameterMapping + ". Cause: " + e, e);
+        }
+      }
+    }
+  }
+}
+```
 
 ### 4.9 ResultSetHandler详解
+
+`ResultSetHandler`用于在StatementHandler对象执行完查询操作或存储过程后，对结果集或存储过程的执行结果进行处理。
+
+```java
+public interface ResultSetHandler {
+  // 获取Statement对象中的ResultSet对象，对ResultSet对象进行处理，返回包含结果实体的List对象
+  <E> List<E> handleResultSets(Statement stmt) throws SQLException;
+
+  // 将ResultSet对象包装成Cursor对象，对Cursor进行遍历时，能够动态地从数据库查询数据，避免一次性将所有数据加载到内存中
+  <E> Cursor<E> handleCursorResultSets(Statement stmt) throws SQLException;
+
+  // 处理存储过程调用结果
+  void handleOutputParameters(CallableStatement cs) throws SQLException;
+}
+```
+
+ResultSetHandler接口只有一个默认的实现`DefaultResultHandler`。
+
+```java
+@Override
+public List<Object> handleResultSets(Statement stmt) throws SQLException {
+  ErrorContext.instance().activity("handling results").object(mappedStatement.getId());
+
+  final List<Object> multipleResults = new ArrayList<>();
+
+  int resultSetCount = 0;
+  // 1 获取ResultSet对象，将其包装成ResultSetWrapper，通过ResultSetWrapper对象能够更方便地获取表字段名称、字段对应的TypeHandler信息
+  ResultSetWrapper rsw = getFirstResultSet(stmt);
+
+  // 2 获取ResultMap信息，一条语句一般对应一个ResultMap // TODO
+  List<ResultMap> resultMaps = mappedStatement.getResultMaps();
+  int resultMapCount = resultMaps.size();
+  validateResultMapsCount(rsw, resultMapCount);
+  while (rsw != null && resultMapCount > resultSetCount) {
+    ResultMap resultMap = resultMaps.get(resultSetCount);
+    // 3 处理结果集（ResultSetWrapper对象），将生成的实体对象存放在multipleResults列表中
+    handleResultSet(rsw, resultMap, multipleResults, null);
+    rsw = getNextResultSet(stmt);
+    cleanUpAfterHandlingResultSet();
+    resultSetCount++;
+  }
+  ...
+
+  return collapseSingleResultList(multipleResults);
+}
+```
 
 
 
@@ -1001,41 +1403,468 @@ SqlSession的创建过程拆解为3个阶段：Configuration实例的创建过�
 
 ### 5.1 XPath方式解析XML文件
 
-MyBatis的主配置文件和Mapper配置都使用的是XML格式。MyBatis中的Configuration组件用于描述主配置文件信息，框架在启动时会解析XML配置，将配置信息转换为Configuration对象。
+MyBatis的**主配置文件**和**Mapper配置**都使用的是XML格式。MyBatis中的Configuration组件用于描述主配置文件信息，框架在启动时会解析XML配置，将配置信息转换为Configuration对象。
 
-JDK API中提供了3种方式解析XML，分别为DOM、SAX和XPath。
+JDK API中提供了3种方式解析XML，分别为==DOM==、==SAX==和==XPath==。
+
+在这3种方式中，API最易于使用的就是XPath方式，MyBatis框架中也采用XPath方式解析XML文件中的配置信息。
+
+使用JDK提供的XPath相关API解析XML需要以下几步:
+
+```java
+// 通过JDK，将XML内容转换为User实体对象
+@Test
+public void testXPathParser() {
+  try {
+    // 创建DocumentBuilderFactory实例
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    // 创建DocumentBuilder实例
+    DocumentBuilder builder = factory.newDocumentBuilder();
+    InputStream inputStream = Resources.getResourceAsStream("com/andyron/ch05/users.xml");
+    Document doc = builder.parse(inputStream);
+    // 获取XPath实例
+    XPath xPath = XPathFactory.newInstance().newXPath();
+    // 执行XPath表达式，获取节点信息
+    NodeList nodeList = (NodeList) xPath.evaluate("/users/*", doc, XPathConstants.NODESET);
+    List<User> userList = new ArrayList<>();
+    for (int i = 1; i < nodeList.getLength() + 1; i++) {
+      String path = "/users/user[" + i + "]";
+      String id = (String) xPath.evaluate(path + "/@id", doc, XPathConstants.STRING);
+      String name = (String) xPath.evaluate(path + "/name", doc, XPathConstants.STRING);
+      String createTime = (String) xPath.evaluate(path + "/createTime", doc, XPathConstants.STRING);
+      String passward = (String) xPath.evaluate(path + "/passward", doc, XPathConstants.STRING);
+      String phone = (String) xPath.evaluate(path + "/phone", doc, XPathConstants.STRING);
+      String nickName = (String) xPath.evaluate(path + "/nickName", doc, XPathConstants.STRING);
+      // 构建User
+      User user = buildUser(id, name, createTime, passward, phone, nickName);
+      userList.add(user);
+    }
+    System.out.println(JSON.toJSONString(userList));
+  } catch (Exception e) {
+    e.printStackTrace();
+  }
+}
+```
+
+1. 创建表示XML文档的`Document`对象
+
+2. 创建用于执行XPath表达式的`XPath`对象
+
+3. 使用XPath对象执行表达式，获取XML内容
+
+为了简化XPath解析操作，MyBatis通过`XPathParser`工具类封装了对XML的解析操作，同时使用XNode类增强了对XML节点的操作。使用`XNode`对象，我们可以很方便地获取节点的属性、子节点等信息。
+
+```java
+@Test
+public void testXPathParserByMybatis() throws Exception {
+  Reader resource = Resources.getResourceAsReader("com/andyron/ch05/users.xml");
+  XPathParser parser = new XPathParser(resource);
+  // 注册日期转换器
+  DateConverter dateConverter = new DateConverter(null);
+  dateConverter.setPattern("yyyy-MM-dd HH:mm:ss");
+  ConvertUtils.register(dateConverter, Date.class);
+
+  List<User> userList = new ArrayList<>();
+  //
+  List<XNode> nodes = parser.evalNodes("/users/*");
+  //
+  for (XNode node : nodes) {
+    User user = new User();
+    Long id = node.getLongAttribute("id");
+    BeanUtils.setProperty(user, "id", id);
+    List<XNode> childNodes = node.getChildren();
+    for (XNode childNode : childNodes) {
+      BeanUtils.setProperty(user, childNode.getName(), childNode.getStringBody());
+    }
+    userList.add(user);
+  }
+  System.out.println(JSON.toJSONString(userList));
+}
+```
 
 
 
 ### 5.2　Configuration实例创建过程
 
+Configuration主要有3个作用：
 
+1. 用于描述MyBatis配置信息，例如`<settings>`标签配置的参数信息。
+2. 作为容器注册MyBatis其他组件，例如TypeHandler、MappedStatement等。
+3. 提供工厂方法，创建ResultSetHandler、StatementHandler、Executor、ParameterHandler等组件实例。
+
+在SqlSession实例化前，首先解析MyBatis主配置文件及所有Mapper文件，创建Configuration实例。
+
+MyBatis通过`XMLConfigBuilder`类完成Configuration对象的构建工作：
+
+```java
+Reader reader = Resources.getResourceAsReader("mybatis-config.xml");
+XMLConfigBuilder builder = new XMLConfigBuilder(reader);
+Configuration config = builder.parse();
+```
+
+`XMLConfigBuilder`的源码：
+
+```java
+public Configuration parse() {
+  // 防止parse()方法被同一个实例多次调用
+  if (parsed) {
+    throw new BuilderException("Each XMLConfigBuilder can only be used once.");
+  }
+  parsed = true;
+  // XPathParser.evalNode("/configuration") 创建configuration节点的XNode对象
+  // parseConfigurationf()方法对XNode进行处理
+  parseConfiguration(parser.evalNode("/configuration"));
+  return configuration;
+}
+
+// 对于<configuration>标签的子节点，都有一个单独的方法处理
+private void parseConfiguration(XNode root) {
+  try {
+    // issue #117 read properties first
+    propertiesElement(root.evalNode("properties"));
+    Properties settings = settingsAsProperties(root.evalNode("settings"));
+    loadCustomVfs(settings);
+    loadCustomLogImpl(settings);
+    typeAliasesElement(root.evalNode("typeAliases"));
+    pluginElement(root.evalNode("plugins"));
+    objectFactoryElement(root.evalNode("objectFactory"));
+    objectWrapperFactoryElement(root.evalNode("objectWrapperFactory"));
+    reflectorFactoryElement(root.evalNode("reflectorFactory"));
+    settingsElement(settings);
+    // read it after objectFactory and objectWrapperFactory issue #631
+    environmentsElement(root.evalNode("environments"));
+    databaseIdProviderElement(root.evalNode("databaseIdProvider"));
+    typeHandlerElement(root.evalNode("typeHandlers"));
+    mapperElement(root.evalNode("mappers"));
+  } catch (Exception e) {
+    throw new BuilderException("Error parsing SQL Mapper Configuration. Cause: " + e, e);
+  }
+}
+```
+
+MyBatis主配置文件中所有标签的用途如下：
+
+- `<properties>`：用于配置属性信息，这些属性的值可以通过${...}方式引用。
+
+- `<settings>`：通过一些属性来控制MyBatis运行时的一些行为。
+
+- `<typeAliases>`：用于配置类型别名，目的是为Java类型设置一个更短的名字。它存在的意义仅在于用来减少类完全限定名的冗余。
+
+- `<plugins>`：用于注册用户自定义的插件信息。
+
+- `<objectFactory>` 🔖
+
+- `<objectWrapperFactory>`
+
+- `<reflectorFactory>`：用于配置自定义的反射工厂。MyBatis通过反射工厂（ReflectorFactory）创建描述Java类型反射信息的Reflector对象，通过Reflector对象能够很方便地获取Class对象的Setter/Getter方法、属性等信息。
+
+- `<environments>`：用于配置MyBatis数据连接相关的环境及事务管理器信息。
+
+- `<databaseIdProvider>`：MyBatis能够根据不同的数据库厂商执行不同的SQL语句，该标签用于配置数据库厂商信息。
+
+  ```xml
+  <databaseIdProvider type="DB_VENDOR">
+    <property name="SQL Server" value="sqlserver"/>
+    <property name="DB2" value="db2"/>
+    <property name="Oracle" value="oracle" />
+  </databaseIdProvider>
+  ```
+
+  在Mapper配置中，可以通过databaseId属性指定不同数据库厂商对应的SQL语句：
+
+  ![](images/iShot_2023-05-26_16.32.45.png)
+
+- `<typeHandlers>`：用于注册用户自定义的类型处理器（TypeHandler）。
+
+- `<mappers>`：用于配置MyBatis Mapper信息。
+
+
+
+MyBatis框架启动后，首先创建Configuration对象，然后解析所有配置信息，将解析后的配置信息存放在Configuration对象中。
 
 ### 5.3　SqlSession实例创建过程
 
+SqlSession实例使用工厂模式创建，所以先创建SqlSessionFactory工厂对象，然后调用SqlSessionFactory对象的openSession()方法。SqlSessionFactory需要SqlSessionFactoryBuilder来创建。
 
+```java
+Reader reader = Resources.getResourceAsReader("mybatis-config.xml");
+SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(reader);
+SqlSession sqlSession = sqlSessionFactory.openSession();
+```
+
+build()方法中，通过XMLConfigBuilder对象来解析配置文件（上一节）。
+
+SqlSessionFactory接口只有一个默认的实现，即`DefaultSqlSessionFactory`：
+
+```java
+@Override
+public SqlSession openSession() {
+  return openSessionFromDataSource(configuration.getDefaultExecutorType(), null, false);
+}
+
+private SqlSession openSessionFromDataSource(ExecutorType execType, TransactionIsolationLevel level,
+                                             boolean autoCommit) {
+  Transaction tx = null;
+  try {
+    // 获取mybatis主配置文件配置的环境信息
+    final Environment environment = configuration.getEnvironment();
+    // 创建事务管理器工厂
+    final TransactionFactory transactionFactory = getTransactionFactoryFromEnvironment(environment);
+    // 创建事务管理器
+    tx = transactionFactory.newTransaction(environment.getDataSource(), level, autoCommit);
+    // 根据主配置文件中指定的Executor类型创建对应的Executor实例
+    final Executor executor = configuration.newExecutor(tx, execType);
+    // 创建DefaultSqlSession实例
+    return new DefaultSqlSession(configuration, executor, autoCommit);
+  } catch (Exception e) {
+    closeTransaction(tx); // may have fetched a connection so lets call close()
+    throw ExceptionFactory.wrapException("Error opening session.  Cause: " + e, e);
+  } finally {
+    ErrorContext.instance().reset();
+  }
+}
+```
+
+MyBatis提供了两种事务管理器，分别为`JdbcTransaction`（使用JDBC中的Connection对象实现事务管理）和`ManagedTransaction`（事务由外部容器管理），分别由对应的工厂类`JdbcTransactionFactory`和`ManagedTransactionFactory`创建。
+
+最后创建的DefaultSqlSession对象中持有Executor对象的引用，真正执行SQL操作的是Executor对象。
 
 ## 6 SqlSession执行Mapper过程
 
+Mapper由两部分组成，分别为Mapper接口和通过注解或者XML文件配置的SQL语句。
+
 ### 6.1 Mapper接口的注册过程
 
+在创建SqlSession实例后，需要调用SqlSession的getMapper()方法获取一个UserMapper的引用，然后通过该引用调用Mapper接口中定义的方法：
 
+```java
+UserMapper userMapper = sqlSession.getMapper(UserMapper.class);
+List<User> users = userMapper.listAllUser();
+```
+
+实际上getMapper()方法返回的是一个动态代理对象。
+
+MyBatis中通过`MapperProxy`类实现动态代理。MapperProxy使用的是JDK内置的动态代理，实现了InvocationHandler接口，invoke()方法中为通用的拦截逻辑。
+
+使用JDK内置动态代理，通过MapperProxy类实现InvocationHandler接口，定义方法执行拦截逻辑后，还需要调用java.lang.reflect.Proxy类的newProxyInstance()方法创建代理对象。
+
+MyBatis对这一过程做了封装，使用`MapperProxyFactory`创建Mapper动态代理对象。
+
+> MapperProxyFactory实例是什么时候创建的呢？
+
+MyBatis通过Configuration对象中的mapperRegistry属性注册Mapper接口与MapperProxyFactory对象之间的对应关系。`MapperRegistry`类的关键代码：
+
+```java
+public class MapperRegistry {
+
+  private final Configuration config;
+  // 用于注册Mapper接口对应的Class对象和MapperProxyFactory对象对应关系
+  private final Map<Class<?>, MapperProxyFactory<?>> knownMappers = new HashMap<>();
+
+  public MapperRegistry(Configuration config) {
+    this.config = config;
+  }
+
+  // 根据Mapper接口Class对象获取Mapper动态代理对象
+  @SuppressWarnings("unchecked")
+  public <T> T getMapper(Class<T> type, SqlSession sqlSession) {
+    final MapperProxyFactory<T> mapperProxyFactory = (MapperProxyFactory<T>) knownMappers.get(type);
+    if (mapperProxyFactory == null) {
+      throw new BindingException("Type " + type + " is not known to the MapperRegistry.");
+    }
+    try {
+      return mapperProxyFactory.newInstance(sqlSession);
+    } catch (Exception e) {
+      throw new BindingException("Error getting mapper instance. Cause: " + e, e);
+    }
+  }
+
+  public <T> boolean hasMapper(Class<T> type) {
+    return knownMappers.containsKey(type);
+  }
+
+  // 根据Mapper接口Class对象创建MapperProxyFactory对象，并注册到knownMappers属性中
+  public <T> void addMapper(Class<T> type) {
+    if (type.isInterface()) {
+      if (hasMapper(type)) {
+        throw new BindingException("Type " + type + " is already known to the MapperRegistry.");
+      }
+      boolean loadCompleted = false;
+      try {
+        knownMappers.put(type, new MapperProxyFactory<>(type));
+        // It's important that the type is added before the parser is run
+        // otherwise the binding may automatically be attempted by the
+        // mapper parser. If the type is already known, it won't try.
+        MapperAnnotationBuilder parser = new MapperAnnotationBuilder(config, type);
+        parser.parse();
+        loadCompleted = true;
+      } finally {
+        if (!loadCompleted) {
+          knownMappers.remove(type);
+        }
+      }
+    }
+  }
+...
+  
+}
+```
+
+
+
+MyBatis框架在应用启动时会解析所有的Mapper接口，然后调用MapperRegistry对象的addMapper()方法将Mapper接口信息和对应的MapperProxyFactory对象注册到MapperRegistry对象中。
 
 ### 6.2 MappedStatement注册过程
 
+MyBatis通过`MappedStatement`类描述Mapper的SQL配置信息。
 
+SQL配置有两种方式：一种是通过XML文件配置；另一种是通过Java注解，而Java注解的本质就是一种轻量级的配置信息。
+
+Configuration类中mappedStatements属性用于注册MyBatis中所有的MappedStatement对象，这个属性是个Map对象，它的Key为Mapper SQL配置的Id，如果SQL是通过XML配置的，则Id为命名空间加上<select|update|delete|insert>标签的Id，如果SQL通过Java注解配置，则Id为Mapper接口的完全限定名（包括包名）加上方法名称。
+
+前面章节提到，MyBatis主配置文件的解析是通过XMLConfigBuilder对象来完成的。想要了解MappedStatement对象的创建过程，就必须重点关注`<mappers>`标签的解析过程。
+
+```java
+// <mappers>标签
+private void mapperElement(XNode parent) throws Exception {
+  if (parent != null) {
+    for (XNode child : parent.getChildren()) {
+      // 通过<package>标签指定包名
+      if ("package".equals(child.getName())) {
+        String mapperPackage = child.getStringAttribute("name");
+        configuration.addMappers(mapperPackage);
+      } else {
+        String resource = child.getStringAttribute("resource");
+        String url = child.getStringAttribute("url");
+        String mapperClass = child.getStringAttribute("class");
+        // 通过resource属性指定XML文件路径
+        if (resource != null && url == null && mapperClass == null) {
+          ErrorContext.instance().resource(resource);
+          try (InputStream inputStream = Resources.getResourceAsStream(resource)) {
+            XMLMapperBuilder mapperParser = new XMLMapperBuilder(inputStream, configuration, resource,
+                                                                 configuration.getSqlFragments());
+            mapperParser.parse();
+          }
+        } else if (resource == null && url != null && mapperClass == null) {
+          // 通过url属性指定XML文件路径
+          ErrorContext.instance().resource(url);
+          try (InputStream inputStream = Resources.getUrlAsStream(url)) {
+            XMLMapperBuilder mapperParser = new XMLMapperBuilder(inputStream, configuration, url,
+                                                                 configuration.getSqlFragments());
+            mapperParser.parse();
+          }
+        } else if (resource == null && url == null && mapperClass != null) {
+          // 通过class属性指定接口的完全限定名
+          Class<?> mapperInterface = Resources.classForName(mapperClass);
+          configuration.addMapper(mapperInterface);
+        } else {
+          throw new BuilderException(
+            "A mapper element may only specify a url, resource or class, but not more than one.");
+        }
+      }
+    }
+  }
+}
+```
+
+
+
+`<mappers>`标签配置Mapper信息有以下几种方式：
+
+![](images/image-20230526182558548.png)
+
+
+
+🔖
 
 ### 6.3 Mapper方法调用过程详解
 
+本节内容：Mapper方法的执行过程以及Mapper接口与Mapper SQL配置是如何进行关联的。
 
+
+
+`MapperMethod`类是对Mapper方法相关信息的封装，能够很方便地获取SQL语句的类型、方法的签名信息等。
+
+```java
+public class MapperMethod {
+
+  private final SqlCommand command;
+  private final MethodSignature method;
+
+  public MapperMethod(Class<?> mapperInterface, Method method, Configuration config) {
+    this.command = new SqlCommand(config, mapperInterface, method);
+    this.method = new MethodSignature(config, mapperInterface, method);
+  }
+  ...
+}
+```
+
+SqlCommand对象用于获取SQL语句的类型、Mapper的Id等信息；MethodSignature对象用于获取方法的签名信息，例如Mapper方法的参数名、参数注解等信息。
+
+🔖
+
+
+
+MapperMethod提供了一个execute()方法，用于执行SQL命令。
+
+
+
+
+
+MyBatis通过动态代理将Mapper方法的调用转换成通过SqlSession提供的API方法完成数据库的增删改查操作，即旧的iBatis框架调用Mapper的方式。
 
 ### 6.4 SqlSession执行Mapper过程
+
+MyBatis通过动态代理将Mapper方法的调用转换为调用SqlSession提供的增删改查方法，以Mapper的Id作为参数，执行数据库的增删改查操作，即：
+
+```java
+@Test
+public void testSqlSession() throws IOException {
+  InputStream inputStream = Resources.getResourceAsStream("mybatis-config.xml");
+  SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(inputStream);
+  SqlSession sqlSession = sqlSessionFactory.openSession();
+
+  List<User> users = sqlSession.selectList("com.andyron.ch04.mapper.UserMapper.listAllUser");
+
+  System.out.println(JSON.toJSONString(users));
+}
+```
+
+`DefaultSqlSession`中的selectList()方法：
+
+```java
+private <E> List<E> selectList(String statement, Object parameter, RowBounds rowBounds, ResultHandler handler) {
+  try {
+    // 根据Mapper的Id获取对应的MappedStatement对象
+    MappedStatement ms = configuration.getMappedStatement(statement);
+    dirty |= ms.isDirtySelect();
+    // 以MappedStatement对象为参数，调用Executor的query()方法
+    return executor.query(ms, wrapCollection(parameter), rowBounds, handler);
+  } catch (Exception e) {
+    throw ExceptionFactory.wrapException("Error querying database.  Cause: " + e, e);
+  } finally {
+    ErrorContext.instance().reset();
+  }
+}
+```
+
+
+
+`BaseExecutor`类对query()方法。
+
+🔖
+
+### 6.5 小结
+
+MyBatis中Mapper的配置分为两部分，分别为Mapper接口和Mapper SQL配置。MyBatis通过动态代理的方式创建Mapper接口的代理对象，MapperProxy类中定义了Mapper方法执行时的拦截逻辑，通过`MapperProxyFactory`创建代理实例，MyBatis启动时，会将MapperProxyFactory注册到Configuration对象中。另外，MyBatis通过MappedStatement类描述Mapper SQL配置信息，框架启动时，会解析Mapper SQL配置，将所有的`MappedStatement`对象注册到Configuration对象中。
+
+通过Mapper代理对象调用Mapper接口中定义的方法时，会执行MapperProxy类中的拦截逻辑，将Mapper方法的调用转换为调用SqlSession提供的API方法。在SqlSession的API方法中通过Mapper的Id找到对应的MappedStatement对象，获取对应的SQL信息，通过StatementHandler操作JDBC的Statement对象完成与数据库的交互，然后通过ResultSetHandler处理结果集，将结果返回给调用者。
 
 
 
 ## 7 MyBatis缓存
 
-MyBatis提供了一级缓存和二级缓存，其中一级缓存基于SqlSession实现，而二级缓存基于Mapper实现
+MyBatis提供了一级缓存和二级缓存，其中一级缓存基于SqlSession实现，而二级缓存基于Mapper实现。
 
 ### 7.1 MyBatis缓存的使用
 
