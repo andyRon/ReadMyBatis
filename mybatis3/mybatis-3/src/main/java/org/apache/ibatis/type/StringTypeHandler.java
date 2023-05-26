@@ -25,12 +25,14 @@ import java.sql.SQLException;
  */
 public class StringTypeHandler extends BaseTypeHandler<String> {
 
+  // 调用PreparedStatement对象的setString()方法将Java中的java.lang.String类型转换为JDBC类型，并为参数占位符赋值
   @Override
   public void setNonNullParameter(PreparedStatement ps, int i, String parameter, JdbcType jdbcType)
       throws SQLException {
     ps.setString(i, parameter);
   }
 
+  // 调用ResultSet对象的getString()方法将JDBC中的字符串类型转为Java中的java.lang.String类型，并返回列的值
   @Override
   public String getNullableResult(ResultSet rs, String columnName) throws SQLException {
     return rs.getString(columnName);

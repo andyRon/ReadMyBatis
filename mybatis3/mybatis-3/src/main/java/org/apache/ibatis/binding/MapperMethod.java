@@ -53,12 +53,14 @@ public class MapperMethod {
     this.command = new SqlCommand(config, mapperInterface, method);
     this.method = new MethodSignature(config, mapperInterface, method);
   }
-
+  // TODO
   public Object execute(SqlSession sqlSession, Object[] args) {
     Object result;
     switch (command.getType()) {
       case INSERT: {
+        // 获取参数信息
         Object param = method.convertArgsToSqlCommandParam(args);
+        // 调用sqlSession.insert()方法，然后调用rowCountResult()方法统计行数
         result = rowCountResult(sqlSession.insert(command.getName(), param));
         break;
       }
@@ -216,12 +218,14 @@ public class MapperMethod {
 
   public static class SqlCommand {
 
-    private final String name;
-    private final SqlCommandType type;
+    private final String name;  // Mapper Id
+    private final SqlCommandType type;  // SQL类型
 
     public SqlCommand(Configuration configuration, Class<?> mapperInterface, Method method) {
       final String methodName = method.getName();
+      // 获取声明该方法的类或接口的Class对象
       final Class<?> declaringClass = method.getDeclaringClass();
+      // 获取描述<select|update|insert|delete>标签的MappedStatement对象
       MappedStatement ms = resolveMappedStatement(mapperInterface, methodName, declaringClass, configuration);
       if (ms == null) {
         if (method.getAnnotation(Flush.class) == null) {
@@ -249,13 +253,16 @@ public class MapperMethod {
 
     private MappedStatement resolveMappedStatement(Class<?> mapperInterface, String methodName, Class<?> declaringClass,
         Configuration configuration) {
+      // 获取Mapper的id
       String statementId = mapperInterface.getName() + "." + methodName;
       if (configuration.hasStatement(statementId)) {
+        // 如果Configuration对象中已注册了MappedStatement对象，则获取该MappedStatement对象
         return configuration.getMappedStatement(statementId);
       }
       if (mapperInterface.equals(declaringClass)) {
         return null;
       }
+      // 如果方法是在Mapper父类接口中定义的，则根据父接口获取对应的MappedStatement对象
       for (Class<?> superInterface : mapperInterface.getInterfaces()) {
         if (declaringClass.isAssignableFrom(superInterface)) {
           MappedStatement ms = resolveMappedStatement(superInterface, methodName, declaringClass, configuration);
@@ -281,7 +288,14 @@ public class MapperMethod {
     private final Integer rowBoundsIndex;
     private final ParamNameResolver paramNameResolver;
 
+    /*
+    MethodSignature构造方法中只做了3件事情：
+    1 获取Mapper方法的返回值类型，具体是哪种类型，通过boolean类型的属性进行标记。例如，当返回值类型为void时，returnsVoid属性值为true。
+    2 记录RowBounds参数位置，用于处理后续的分页查询，同时记录ResultHandler参数位置，用于处理从数据库中检索的每一行数据。
+    3 创建ParamNameResolver对象，用于解析Mapper方法中的参数名称及参数注解信息。
+     */
     public MethodSignature(Configuration configuration, Class<?> mapperInterface, Method method) {
+      // 获取方法返回值类型
       Type resolvedReturnType = TypeParameterResolver.resolveReturnType(method, mapperInterface);
       if (resolvedReturnType instanceof Class<?>) {
         this.returnType = (Class<?>) resolvedReturnType;
@@ -296,8 +310,11 @@ public class MapperMethod {
       this.returnsOptional = Optional.class.equals(this.returnType);
       this.mapKey = getMapKey(method);
       this.returnsMap = this.mapKey != null;
+      // RowBounds参数位置索引  // TODO
       this.rowBoundsIndex = getUniqueParamIndex(method, RowBounds.class);
+      // ResultHandler参数位置索引
       this.resultHandlerIndex = getUniqueParamIndex(method, ResultHandler.class);
+      // ParamNameResolver用于解析Mapper方法参数
       this.paramNameResolver = new ParamNameResolver(configuration, method);
     }
 

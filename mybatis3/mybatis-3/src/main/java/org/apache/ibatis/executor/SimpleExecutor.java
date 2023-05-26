@@ -86,8 +86,11 @@ public class SimpleExecutor extends BaseExecutor {
 
   private Statement prepareStatement(StatementHandler handler, Log statementLog) throws SQLException {
     Statement stmt;
+    // 获取JDBC的Connection对象
     Connection connection = getConnection(statementLog);
+    // 得到Statement对象
     stmt = handler.prepare(connection, transaction.getTimeout());
+    // 调用StatementHandler对象的parameterize()方法（parameterize()方法中会使用ParameterHandler为Statement对象设置参数）
     handler.parameterize(stmt);
     return stmt;
   }

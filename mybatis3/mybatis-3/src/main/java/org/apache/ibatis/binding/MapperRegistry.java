@@ -34,12 +34,14 @@ import org.apache.ibatis.session.SqlSession;
 public class MapperRegistry {
 
   private final Configuration config;
+  // 用于注册Mapper接口对应的Class对象和MapperProxyFactory对象对应关系
   private final Map<Class<?>, MapperProxyFactory<?>> knownMappers = new HashMap<>();
 
   public MapperRegistry(Configuration config) {
     this.config = config;
   }
 
+  // 根据Mapper接口Class对象获取Mapper动态代理对象
   @SuppressWarnings("unchecked")
   public <T> T getMapper(Class<T> type, SqlSession sqlSession) {
     final MapperProxyFactory<T> mapperProxyFactory = (MapperProxyFactory<T>) knownMappers.get(type);
@@ -57,6 +59,7 @@ public class MapperRegistry {
     return knownMappers.containsKey(type);
   }
 
+  // 根据Mapper接口Class对象创建MapperProxyFactory对象，并注册到knownMappers属性中
   public <T> void addMapper(Class<T> type) {
     if (type.isInterface()) {
       if (hasMapper(type)) {

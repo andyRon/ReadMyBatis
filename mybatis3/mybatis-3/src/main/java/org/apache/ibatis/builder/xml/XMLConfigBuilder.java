@@ -103,14 +103,18 @@ public class XMLConfigBuilder extends BaseBuilder {
   }
 
   public Configuration parse() {
+    // 防止parse()方法被同一个实例多次调用
     if (parsed) {
       throw new BuilderException("Each XMLConfigBuilder can only be used once.");
     }
     parsed = true;
+    // XPathParser.evalNode("/configuration") 创建configuration节点的XNode对象
+    // parseConfigurationf()方法对XNode进行处理
     parseConfiguration(parser.evalNode("/configuration"));
     return configuration;
   }
 
+  // 对于<configuration>标签的子节点，都有一个单独的方法处理
   private void parseConfiguration(XNode root) {
     try {
       // issue #117 read properties first
@@ -379,10 +383,11 @@ public class XMLConfigBuilder extends BaseBuilder {
       }
     }
   }
-
+  // <mappers>标签
   private void mapperElement(XNode parent) throws Exception {
     if (parent != null) {
       for (XNode child : parent.getChildren()) {
+        // 通过<package>标签指定包名
         if ("package".equals(child.getName())) {
           String mapperPackage = child.getStringAttribute("name");
           configuration.addMappers(mapperPackage);
@@ -390,6 +395,7 @@ public class XMLConfigBuilder extends BaseBuilder {
           String resource = child.getStringAttribute("resource");
           String url = child.getStringAttribute("url");
           String mapperClass = child.getStringAttribute("class");
+          // 通过resource属性指定XML文件路径
           if (resource != null && url == null && mapperClass == null) {
             ErrorContext.instance().resource(resource);
             try (InputStream inputStream = Resources.getResourceAsStream(resource)) {
@@ -398,6 +404,7 @@ public class XMLConfigBuilder extends BaseBuilder {
               mapperParser.parse();
             }
           } else if (resource == null && url != null && mapperClass == null) {
+            // 通过url属性指定XML文件路径
             ErrorContext.instance().resource(url);
             try (InputStream inputStream = Resources.getUrlAsStream(url)) {
               XMLMapperBuilder mapperParser = new XMLMapperBuilder(inputStream, configuration, url,
@@ -405,6 +412,7 @@ public class XMLConfigBuilder extends BaseBuilder {
               mapperParser.parse();
             }
           } else if (resource == null && url == null && mapperClass != null) {
+            // 通过class属性指定接口的完全限定名
             Class<?> mapperInterface = Resources.classForName(mapperClass);
             configuration.addMapper(mapperInterface);
           } else {
