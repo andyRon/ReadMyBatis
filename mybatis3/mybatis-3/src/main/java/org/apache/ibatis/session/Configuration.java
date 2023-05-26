@@ -694,7 +694,7 @@ public class Configuration {
   public MetaObject newMetaObject(Object object) {
     return MetaObject.forObject(object, objectFactory, objectWrapperFactory, reflectorFactory);
   }
-
+  // ParameterHandler组件工厂方法
   public ParameterHandler newParameterHandler(MappedStatement mappedStatement, Object parameterObject,
       BoundSql boundSql) {
     ParameterHandler parameterHandler = mappedStatement.getLang().createParameterHandler(mappedStatement,
@@ -702,6 +702,7 @@ public class Configuration {
     return (ParameterHandler) interceptorChain.pluginAll(parameterHandler);
   }
 
+  // ResultSetHandler组件工厂方法
   public ResultSetHandler newResultSetHandler(Executor executor, MappedStatement mappedStatement, RowBounds rowBounds,
       ParameterHandler parameterHandler, ResultHandler resultHandler, BoundSql boundSql) {
     ResultSetHandler resultSetHandler = new DefaultResultSetHandler(executor, mappedStatement, parameterHandler,
@@ -709,6 +710,7 @@ public class Configuration {
     return (ResultSetHandler) interceptorChain.pluginAll(resultSetHandler);
   }
 
+  // StatementHandler组件工厂方法
   public StatementHandler newStatementHandler(Executor executor, MappedStatement mappedStatement,
       Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler, BoundSql boundSql) {
     StatementHandler statementHandler = new RoutingStatementHandler(executor, mappedStatement, parameterObject,
@@ -720,6 +722,7 @@ public class Configuration {
     return newExecutor(transaction, defaultExecutorType);
   }
 
+  // Executor组件工厂方法
   public Executor newExecutor(Transaction transaction, ExecutorType executorType) {
     executorType = executorType == null ? defaultExecutorType : executorType;
     Executor executor;

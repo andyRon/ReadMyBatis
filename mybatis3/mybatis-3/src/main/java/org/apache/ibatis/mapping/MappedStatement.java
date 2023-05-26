@@ -33,14 +33,18 @@ import org.apache.ibatis.session.Configuration;
  */
 public final class MappedStatement {
 
+  // Mapper配置文件路径
   private String resource;
+  // Configuration对象的引用，方便获取MyBatis配置信息及TypeHandler、TypeAlias等信息
   private Configuration configuration;
   private String id;
   private Integer fetchSize;
   private Integer timeout;
   private StatementType statementType;
   private ResultSetType resultSetType;
+  // 解析<select|update|insert|delete>，将SQL语句配置信息解析为SqlSource对象
   private SqlSource sqlSource;
+  // 二级缓存实例，根据Mapper中的<cache>标签配置信息创建对应的Cache实现
   private Cache cache;
   private ParameterMap parameterMap;
   private List<ResultMap> resultMaps;
@@ -48,11 +52,14 @@ public final class MappedStatement {
   private boolean useCache;
   private boolean resultOrdered;
   private SqlCommandType sqlCommandType;
+  // 主键生成策略，默认为Jdbc3KeyGenerator，即数据库自增主键。当配置了<selectKey>时，使用SelectKeyGenerator生成主键。
   private KeyGenerator keyGenerator;
   private String[] keyProperties;
   private String[] keyColumns;
+  // <select>标签中通过resultMap属性指定ResultMap是不是嵌套的ResultMap
   private boolean hasNestedResultMaps;
   private String databaseId;
+  // 用于输出日志
   private Log statementLog;
   private LanguageDriver lang;
   private String[] resultSets;

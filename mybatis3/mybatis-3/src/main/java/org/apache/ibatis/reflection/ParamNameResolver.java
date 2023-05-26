@@ -54,9 +54,11 @@ public class ParamNameResolver {
 
   private boolean hasParamAnnotation;
 
+  // 完成了Mapper方法参数的解析过程
   public ParamNameResolver(Configuration config, Method method) {
     this.useActualParamName = config.isUseActualParamName();
     final Class<?>[] paramTypes = method.getParameterTypes();
+    // 获得所有参数注解
     final Annotation[][] paramAnnotations = method.getParameterAnnotations();
     final SortedMap<Integer, String> map = new TreeMap<>();
     int paramCount = paramAnnotations.length;
@@ -85,6 +87,7 @@ public class ParamNameResolver {
           name = String.valueOf(map.size());
         }
       }
+      // 将参数信息存放在Map中，Key为参数位置索引，Value为参数名称
       map.put(paramIndex, name);
     }
     names = Collections.unmodifiableSortedMap(map);
