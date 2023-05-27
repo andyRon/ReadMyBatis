@@ -1868,39 +1868,951 @@ MyBatis提供了一级缓存和二级缓存，其中一级缓存基于SqlSession
 
 ### 7.1 MyBatis缓存的使用
 
+一级缓存默认是开启的，而且不能关闭。不能关闭的原因：MyBatis的一些关键特性（例如通过`<association>`和`<collection>`建立级联映射、避免循环引用（circular references）、加速重复嵌套查询等）都是基于MyBatis一级缓存实现的，而且MyBatis结果集映射相关代码重度依赖CacheKey。
+
+配置参数`localCacheScope`，用于控制一级缓存的级别，该参数的取值为
+
+- `SESSION`：【默认值】表示缓存对整个SqlSession有效，只有执行DML语句（更新语句）时，缓存才会被清除。
+- `STATEMENT`：表示缓存仅对当前执行的语句有效，当语句执行完毕后，缓存就会被清空。
+
+二级缓存使用步骤：
+
+1. 在MyBatis主配置文件中指定`cacheEnabled`属性值为true。
+2. 在MyBatis Mapper配置文件中，配置缓存策略、缓存刷新频率、缓存的容量等属性，例如：
+
+```xml
+<cache
+  eviction="FIFO"
+  flushInterval="60000"
+  size="512"
+  readOnly="true"/>
+```
+
+3. 在配置Mapper时，通过`useCache`属性指定Mapper执行时是否使用缓存。另外，还可以通过`flushCache`属性指定Mapper执行后是否刷新缓存，例如：
+
+```xml
+    <select id="listAllUser"
+            flushCache="false"
+            useCache="true"
+            resultType="com.andyron.ch04.entity.User" >
+        select
+        <include refid="userAllField"/>
+        from user
+    </select>
+```
+
 
 
 ### 7.2 MyBatis缓存实现类
+
+MyBatis的缓存基于JVM堆内存实现，即所有的缓存数据都存放在Java对象中。
+
+MyBatis通过Cache接口定义缓存对象的行为，Cache接口代码如下：
+
+```java
+public interface Cache {
+
+  // 通常情况下缓存的Id为Mapper的命名空间名称
+  String getId();
+
+  // 将一个Java对象添加到缓存中，第一个参数为缓存的Key，即CacheKey的实例；第二个参数为需要缓存的对象
+  void putObject(Object key, Object value);
+
+  Object getObject(Object key);
+
+  // 将一个对象从缓存中移除
+  Object removeObject(Object key);
+
+  void clear();
+
+  int getSize();
+}
+```
+
+MyBatis中的缓存类采用==装饰器模式设计==，Cache接口有一个基本的实现类，即`PerpetualCache`类，该类的实现比较简单，通过一个HashMap实例存放缓存对象。需要注意的是，PerpetualCache类重写了Object类的equals()方法，当两个缓存对象的Id相同时，即认为缓存对象相同。另外，PerpetualCache类还重写了Object类的hashCode()方法，仅以缓存对象的Id作为因子生成hashCode。
+
+除了基础的PerpetualCache类之外，MyBatis中为了对PerpetualCache类的功能进行增强，提供了一些缓存的装饰器类:
+
+![](images/image-20230526235908933.png)
+
+- `BlockingCache`：阻塞版本的缓存装饰器，能够保证同一时间只有一个线程到缓存中查找指定的Key对应的数据。
+- `FifoCache`：先入先出缓存装饰器，FifoCache内部有一个维护具有长度限制的Key键值链表（LinkedList实例）和一个被装饰的缓存对象，Key值链表主要是维护Key的FIFO顺序，而缓存存储和获取则交给被装饰的缓存对象来完成。
+- `LoggingCache`：为缓存增加日志输出功能，记录缓存的请求次数和命中次数，通过日志输出缓存命中率。
+- `LruCache`：最近最少使用的缓存装饰器，当缓存容量满了之后，使用LRU算法淘汰最近最少使用的Key和Value。LruCache中通过重写`LinkedHashMap`类的removeEldestEntry()方法获取最近最少使用的Key值，将Key值保存在LruCache类的eldestKey属性中，然后在缓存中添加对象时，淘汰eldestKey对应的Value值。
+
+- `ScheduledCache`：自动刷新缓存装饰器，当操作缓存对象时，如果当前时间与上次清空缓存的时间间隔大于指定的时间间隔，则清空缓存。清空缓存的动作由getObject()、putObject()、removeObject()等方法触发。
+- `SerializedCache`：序列化缓存装饰器，向缓存中添加对象时，对添加的对象进行序列化处理，从缓存中取出对象时，进行反序列化处理。
+- `SoftCache`：软引用缓存装饰器，SoftCache内部维护了一个缓存对象的强引用队列和软引用队列，缓存以软引用的方式添加到缓存中，并将软引用添加到队列中，获取缓存对象时，如果对象已经被回收，则移除Key，如果未被回收，则将对象添加到强引用队列中，避免被回收，如果强引用队列已经满了，则移除最早入队列的对象的引用。
+- `SynchronizedCache`：线程安全缓存装饰器，SynchronizedCache的实现比较简单，为了保证线程安全，对操作缓存的方法使用synchronized关键字修饰。
+
+- `TransactionalCache`：事务缓存装饰器，该缓存与其他缓存的不同之处在于，TransactionalCache增加了两个方法，即commit()和rollback()。当写入缓存时，只有调用commit()方法后，缓存对象才会真正添加到TransactionalCache对象中，如果调用了rollback()方法，写入操作将被回滚。
+- `WeakCache`：弱引用缓存装饰器，功能和SoftCache类似，只是使用不同的引用类型。
+
+
+
+```java
+    @Test
+    public void testCache() {
+        final int N = 100000;
+        Cache cache = new PerpetualCache("default");
+        cache = new LruCache(cache);
+        cache = new FifoCache(cache);
+        cache = new SoftCache(cache);
+        cache = new WeakCache(cache);
+        cache = new ScheduledCache(cache);
+        cache = new SerializedCache(cache);
+        cache = new SynchronizedCache(cache);
+        cache = new TransactionalCache(cache);
+
+        for (int i = 0; i < N; i++) {
+            cache.putObject(i, i);
+            ((TransactionalCache) cache).commit();
+        }
+        System.out.println(cache.getSize()); // 1024 LruCache中设置了默认大小
+    }
+```
+
+
+
+MyBatis提供了一个CacheBuilder类，通过生成器模式创建缓存对象。
+
+```java
+    @Test
+    public void testCacheBuilder() {
+        final int N = 100000;
+        Cache cache = new CacheBuilder("UserMapper")
+                .implementation(PerpetualCache.class)
+                .addDecorator(LruCache.class)
+                .clearInterval(10 * 60L)
+                .size(1025)
+                .readWrite(false)
+                .blocking(false)
+                .properties(null)
+                .build();
+        for (int i = 0; i < N; i++) {
+            cache.putObject(i, i);
+        }
+        System.out.println(cache.getSize());
+    }
+```
 
 
 
 ### 7.3 MyBatis一级缓存实现原理
 
+Executor采用模板方法设计模式，BaseExecutor类用于处理一些通用的逻辑，其中一级缓存相关的逻辑就是在BaseExecutor类中完成的。
 
+一级缓存使用PerpetualCache实例实现，在BaseExecutor类中维护了两个PerpetualCache属性：
+
+```java
+public abstract class BaseExecutor implements Executor {
+...
+  protected PerpetualCache localCache;
+  protected PerpetualCache localOutputParameterCache;
+
+...
+}
+```
+
+localCache属性用于缓存MyBatis查询结果，localOutputParameterCache属性用于缓存存储过程调用结果。
+
+MyBatis通过`CacheKey`对象来描述缓存的Key值。在进行查询操作时，首先创建CacheKey对象（CacheKey对象决定了**缓存的Key与哪些因素有关系**）。如果两次查询操作CacheKey对象相同，就认为这两次查询执行的是相同的SQL语句。
+
+CacheKey对象通过BaseExecutor类的`createCacheKey()`方法创建。
+
+缓存的Key与下面这些因素有关：
+
+1. Mapper的Id，即Mapper命名空间与<select|update|insert|delete>标签的Id组成的全局限定名。
+2. 查询结果的偏移量及查询的条数。
+3. 具体的SQL语句及SQL语句中需要传递的所有参数。
+4. MyBatis主配置文件中，通过`<environment>`标签配置的环境信息对应的Id属性值。
+
+执行两次查询时，只有上面的信息完全相同时，才会认为两次查询执行的是相同的SQL语句，缓存才会生效。
+
+BaseExecutor的query()方法：
+
+```java
+  @Override
+  public <E> List<E> query(MappedStatement ms, Object parameter, RowBounds rowBounds, ResultHandler resultHandler,
+      CacheKey key, BoundSql boundSql) throws SQLException {
+    ErrorContext.instance().resource(ms.getResource()).activity("executing a query").object(ms.getId());
+    if (closed) {
+      throw new ExecutorException("Executor was closed.");
+    }
+    if (queryStack == 0 && ms.isFlushCacheRequired()) {
+      clearLocalCache();
+    }
+    List<E> list;
+    try {
+      queryStack++;
+      // 从（一级）缓存中获取结果
+      list = resultHandler == null ? (List<E>) localCache.getObject(key) : null;
+      if (list != null) {
+        handleLocallyCachedOutputParameters(ms, key, parameter, boundSql);
+      } else {
+        // 如果缓存中获取不到，则调用queryFromDatabase()方法从数据库中查询
+        list = queryFromDatabase(ms, parameter, rowBounds, resultHandler, key, boundSql);
+      }
+    } finally {
+      queryStack--;
+    }
+    if (queryStack == 0) {
+      for (DeferredLoad deferredLoad : deferredLoads) {
+        deferredLoad.load();
+      }
+      // issue #601
+      deferredLoads.clear();
+      // 如果localCacheScope属性设置为STATEMENT，则每次查询操作完成后，都会调用clearLocalCache()方法清空缓存。
+      if (configuration.getLocalCacheScope() == LocalCacheScope.STATEMENT) {
+        // issue #482
+        clearLocalCache();
+      }
+    }
+    return list;
+  }
+```
+
+首先根据缓存Key从localCache属性中查找是否有缓存对象，如果查找不到，则调用queryFromDatabase()方法从数据库中获取数据，然后将数据写入localCache对象中。
+
+
+
+> 注意：在分布式环境下，务必将MyBatis的localCacheScope属性设置为STATEMENT，避免其他应用节点执行SQL更新语句后，本节点缓存得不到刷新而导致的数据一致性问题。🔖
 
 ### 7.4 MyBatis二级缓存实现原理
+
+需要通过设置cacheEnabled参数值为true来开启二级缓存。
+
+`CachingExecutor`用到了装饰器模式，在其他几种Executor的基础上增加了二级缓存功能。
+
+Configuration类提供了一个工厂方法`newExecutor()`：
+
+```java
+  // Executor组件工厂方法
+  public Executor newExecutor(Transaction transaction, ExecutorType executorType) {
+    executorType = executorType == null ? defaultExecutorType : executorType;
+    Executor executor;
+    if (ExecutorType.BATCH == executorType) {
+      executor = new BatchExecutor(this, transaction);
+    } else if (ExecutorType.REUSE == executorType) {
+      executor = new ReuseExecutor(this, transaction);
+    } else {
+      executor = new SimpleExecutor(this, transaction);
+    }
+    // 如果cacheEnabled参数值为true，则使用CachingExecutor对Executor进行装饰
+    if (cacheEnabled) {
+      executor = new CachingExecutor(executor);
+    }
+    return (Executor) interceptorChain.pluginAll(executor);
+  }
+```
+
+`CachingExecutor`类中维护了一个`TransactionalCacheManager`实例，它用于管理所有的二级缓存对象。
+
+```java
+public class TransactionalCacheManager {
+  // 通过HashMap对象维护二级缓存对应的TransactionalCache实例
+  private final Map<Cache, TransactionalCache> transactionalCaches = new HashMap<>();
+
+  public void clear(Cache cache) {
+    getTransactionalCache(cache).clear();
+  }
+
+  public Object getObject(Cache cache, CacheKey key) {
+    return getTransactionalCache(cache).getObject(key);
+  }
+
+  public void putObject(Cache cache, CacheKey key, Object value) {
+    getTransactionalCache(cache).putObject(key, value);
+  }
+
+  public void commit() {
+    for (TransactionalCache txCache : transactionalCaches.values()) {
+      txCache.commit();
+    }
+  }
+
+  public void rollback() {
+    for (TransactionalCache txCache : transactionalCaches.values()) {
+      txCache.rollback();
+    }
+  }
+
+  private TransactionalCache getTransactionalCache(Cache cache) {
+    return MapUtil.computeIfAbsent(transactionalCaches, cache, TransactionalCache::new);
+  }
+}
+```
+
+以查询操作为例介绍二级缓存的工作机制，CachingExecutor的query()方法：
+
+```java
+  @Override
+  public <E> List<E> query(MappedStatement ms, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler)
+      throws SQLException {
+    BoundSql boundSql = ms.getBoundSql(parameterObject);
+    CacheKey key = createCacheKey(ms, parameterObject, rowBounds, boundSql);
+    return query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+  }
+
+  @Override
+  public <E> List<E> query(MappedStatement ms, Object parameterObject, RowBounds rowBounds, ResultHandler resultHandler,
+      CacheKey key, BoundSql boundSql) throws SQLException {
+    // 获取MappedStatement对象中维护的二级缓存对象
+    Cache cache = ms.getCache();
+    if (cache != null) {
+      // 判断是否需要刷新二级缓存
+      flushCacheIfRequired(ms);
+      if (ms.isUseCache() && resultHandler == null) {
+        ensureNoOutParams(ms, boundSql);
+        @SuppressWarnings("unchecked")
+        List<E> list = (List<E>) tcm.getObject(cache, key);
+        if (list == null) {
+          list = delegate.query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+          tcm.putObject(cache, key, list); // issue #578 and #116
+        }
+        return list;
+      }
+    }
+    return delegate.query(ms, parameterObject, rowBounds, resultHandler, key, boundSql);
+  }
+```
+
+在flushCacheIfRequired()方法中会判断<select|update|delete|insert>标签的`flushCache`属性，。`<select>`标签的flushCache属性值默认为false，而`<update|delete|insert>`标签的flushCache属性值默认为true。
+
+回顾MappedStatement对象创建过程中二级缓存实例的创建。XMLMapperBuilder在解析Mapper配置时会调用cacheElement()方法解析`<cache>`标签，cacheElement()方法代码如下：
+
+```java
+  private void cacheElement(XNode context) {
+    if (context != null) {
+      String type = context.getStringAttribute("type", "PERPETUAL");
+      Class<? extends Cache> typeClass = typeAliasRegistry.resolveAlias(type);
+      String eviction = context.getStringAttribute("eviction", "LRU");
+      Class<? extends Cache> evictionClass = typeAliasRegistry.resolveAlias(eviction);
+      Long flushInterval = context.getLongAttribute("flushInterval");
+      Integer size = context.getIntAttribute("size");
+      boolean readWrite = !context.getBooleanAttribute("readOnly", false);
+      boolean blocking = context.getBooleanAttribute("blocking", false);
+      Properties props = context.getChildrenAsProperties();
+      // 在获取<cache>标签的所有属性信息后，调用MapperBuilderAssistant对象的userNewCache()方法创建二级缓存实例，
+      // 然后通过MapperBuilderAssistant的currentCache属性保存二级缓存对象的引用
+      builderAssistant.useNewCache(typeClass, evictionClass, flushInterval, size, readWrite, blocking, props);
+    }
+  }
+```
 
 
 
 ### 7.5 MyBatis使用Redis缓存
 
+MyBatis除了提供内置的一级缓存和二级缓存外，还支持使用第三方缓存（例如Redis、[Ehcache](https://github.com/ehcache/ehcache3)）作为二级缓存。
 
+MyBatis官方提供了一个[mybatis-redis](https://github.com/mybatis/redis-cache)模块，用于整合Redis作为二级缓存。
+
+🔖
 
 ## 8 MyBatis日志实现
+
+### 8.1 Java日志体系🔖
+
+Java的日志体系以及日志框架的发展。
+
+常用日志框架：
+
+- Log4j：Apache Log4j是一个基于Java的日志记录工具。它是由Ceki Gülcü首创的，现在则是Apache软件基金会的一个项目。
+- Log4j 2：Apache Log4j 2是Apache开发的一款Log4j的升级产品。
+- Commons Logging：Apache基金会所属的项目，是一套Java日志接口，之前叫Jakarta Commons Logging（**JCL**）。
+- SLF4J：全称为Simple Logging Facade for Java，类似于Commons Logging，是一套简易Java日志门面，本身并无日志的实现。
+- Logback：是一套日志组件的实现，属于SLF4J阵营。
+- **JUL**：全称是Java Util Logging，是JDK1.4以后提供的日志实现。
+
+
+
+
+
+现今，Java日志领域被划分为两大阵营：Commons Logging阵营和SLF4J阵营。
+
+JCL和SLF4J属于日志接口，提供统一的日志操作规范，输入日志功能由具体的日志实现框架（例如Log4j、Logback等）完成。
+
+![](images/image-20230527124558523.png)
+
+
+
+![](images/image-20230527125414467.png)
+
+使用SLF4J绑定其他日志框架需要的JAR包如图8-4所示。例如，在应用程序中，如果使用SLF4J接口编写日志输出代码，底层的日志框架为Log4j，则需要在项目中同时引入SLF4J-api.jar、SLF4J-log412.jar和log4j.jar。当我们需要将日志输出框架换成Logback时，只需要将SLF4J-log412.jar、log4j.jar替换成bagback-classic.jar和logback-core.jar即可，应用程序代码无须做任何调整。
+
+![](images/epub_27563388_248.jpeg)
+
+
+
+### 8.2 MyBatis日志实现
+
+MyBatis通过Log接口定义日志操作规范:
+
+```java
+public interface Log {
+  boolean isDebugEnabled();
+  boolean isTraceEnabled();
+  void error(String s, Throwable e);
+  void error(String s);
+  void debug(String s);
+  void trace(String s);
+  void warn(String s);
+}
+```
+
+MyBatis针对不同的日志框架提供对Log接口对应的实现：
+
+![](images/image-20230527130645086.png)
+
+从实现类可以看出，MyBatis支持7种不同的日志实现：
+
+- Apache Commons Logging：使用JCL输出日志。`JakartaCommonsLoggingImpl`
+- Log4j 2：使用Log4j 2框架输入日志。`Log4j2LoggerImpl`、`Log4j2Impl`、`Log4j2AbstractLoggerImpl`
+- Java Util Logging：使用JDK内置的日志模块输出日志。`Jdk14LoggingImpl`
+- Log4j：使用Log4j框架输出日志。`Log4jImpl`
+- No Logging：不输出任何日志。`NoLoggingImpl`
+- SLF4J：使用SLF4J日志门面输出日志。`Slf4jImpl`
+- Stdout：将日志输出到标准输出设备（例如控制台）。`StdOutImpl`
+
+
+
+Log实现类的逻辑比较简单，只是**调用对应日志框架相关的API打印日志**。以Log4jImpl实现类为例，代码：
+
+```java
+public class Log4jImpl implements Log {
+  private static final String FQCN = Log4jImpl.class.getName();
+  private final Logger log;
+  public Log4jImpl(String clazz) {
+    log = Logger.getLogger(clazz);
+  }
+  @Override
+  public void error(String s, Throwable e) {
+    log.log(FQCN, Level.ERROR, s, e);
+  }
+  @Override
+  public void debug(String s) {
+    log.log(FQCN, Level.DEBUG, s, null);
+  }
+  @Override
+  public void trace(String s) {
+    log.log(FQCN, Level.TRACE, s, null);
+  }
+  @Override
+  public void warn(String s) {
+    log.log(FQCN, Level.WARN, s, null);
+  }
+	...
+}
+```
+
+在Log4jImpl构造方法中，获取Log4j框架中的Logger对象，然后**将日志输出操作委托给Logger对象来完成**。其他日志实现类逻辑与之类似。
+
+> MyBatis支持7种不同的日志输出策略，在实际使用MyBatis框架时，具体使用哪种方式输出日志呢？
+
+MyBatis的Log实例采用工厂模式创建。
+
+```java
+public class TestLog {
+    @Test
+    public void test() {
+        // 指定使用某种日志框架（前提是有其依赖）
+        LogFactory.useCommonsLogging();
+        Log log = LogFactory.getLog(TestLog.class);
+        log.error("测试日志框架选用");
+    }
+}
+```
+
+`LogFactory`中使用不同日志框架方法中都会调用`setImplementation()`方法指定日志实现类：
+
+```java
+  private static void setImplementation(Class<? extends Log> implClass) {
+    try {
+      // 获取日志实现类的Constructor对象
+      Constructor<? extends Log> candidate = implClass.getConstructor(String.class);
+      // 根据日志实现类创建Log实例
+      Log log = candidate.newInstance(LogFactory.class.getName());
+      if (log.isDebugEnabled()) {
+        log.debug("Logging initialized using '" + implClass + "' adapter.");
+      }
+      // 记录当前使用的日志实现类的Constructor对象
+      logConstructor = candidate;
+    } catch (Throwable t) {
+      throw new LogException("Error setting Log implementation.  Cause: " + t, t);
+    }
+  }
+```
+
+
+
+MyBatis日志模块设计得比较巧妙的一点是当我们未指定使用哪种日志实现时，MyBatis能够按照顺序查找Classpath下的日志框架相关JAR包。
+
+
+
+MyBatis查找日志框架的顺序为==SLF4J→JCL→Log4j 2→Log4j→JUL→No Logging==。如果Classpath下不存在任何日志框架，则使用NoLoggingImpl日志实现类，即不输出任何日志。
+
+还可以通过`logImpl`参数指定使用哪种框架输出日志。可以是类似`SLF4J`等这样的名字或日志实现类的完全限定名，因为在Configuration类的构造方法中，为这些日志实现类注册了别名：
+
+```java
+typeAliasRegistry.registerAlias("SLF4J", Slf4jImpl.class);
+typeAliasRegistry.registerAlias("COMMONS_LOGGING", JakartaCommonsLoggingImpl.class);
+typeAliasRegistry.registerAlias("LOG4J", Log4jImpl.class);
+typeAliasRegistry.registerAlias("LOG4J2", Log4j2Impl.class);
+typeAliasRegistry.registerAlias("JDK_LOGGING", Jdk14LoggingImpl.class);
+typeAliasRegistry.registerAlias("STDOUT_LOGGING", StdOutImpl.class);
+typeAliasRegistry.registerAlias("NO_LOGGING", NoLoggingImpl.class);
+```
 
 
 
 ## 9 动态SQL实现原理
 
+拼接SQL语句很麻烦，而且容易出错。
+
+### 9.1　动态SQL的使用
+
+动态SQL指的是事先无法预知具体的条件，需要在运行时根据具体的情况动态地生成SQL语句。
+
+🔖
+
+### 9.2　SqlSource与BoundSql详解
+
+MyBatis中和SQL语句有关的两个组件，即`SqlSource`和`BoundSql`。
+
+`SqlSource`就代表Java注解（@Selelect、@Insert、@Delete、@Update或者@SelectProvider、@InsertProvider、@DeleteProvider、@UpdateProvider等）或者XML文件配置的SQL资源。
+
+```java
+public interface SqlSource {
+  BoundSql getBoundSql(Object parameterObject);
+}
+```
+
+`BoundSql`是**对SQL语句及参数信息的封装**，它是SqlSource解析后的结果。
+
+SqlSource接口有4个不同的实现，分别为`StaticSqlSource`、`DynamicSqlSource`、`RawSqlSource`和`ProviderSqlSource`。
+
+- `ProviderSqlSource`：用于描述通过@Select、@SelectProvider等注解配置的SQL资源信息。
+- `DynamicSqlSource`：用于描述Mapper XML文件中配置的SQL资源信息，这些SQL通常包含动态SQL配置或者${}参数占位符，需要在Mapper调用时才能确定具体的SQL语句。
+- `RawSqlSource`：用于描述Mapper XML文件中配置的SQL资源信息，与DynamicSqlSource不同的是，这些SQL语句**在解析XML配置的时候就能确定**，即不包含动态SQL相关配置。
+- `StaticSqlSource`：用于描述ProviderSqlSource、DynamicSqlSource及RawSqlSource解析后得到的静态SQL资源。
+
+无论是Java注解还是XML文件配置的SQL信息，在Mapper调用时都会根据用户传入的参数将Mapper配置转换为StaticSqlSource类。
+
+```java
+public class StaticSqlSource implements SqlSource {
+
+  // Mapper解析后的sql
+  private final String sql;
+  // 参数映射信息
+  private final List<ParameterMapping> parameterMappings;
+  private final Configuration configuration;
+
+  public StaticSqlSource(Configuration configuration, String sql) {
+    this(configuration, sql, null);
+  }
+
+  public StaticSqlSource(Configuration configuration, String sql, List<ParameterMapping> parameterMappings) {
+    this.sql = sql;
+    this.parameterMappings = parameterMappings;
+    this.configuration = configuration;
+  }
+
+  @Override
+  public BoundSql getBoundSql(Object parameterObject) {
+    return new BoundSql(configuration, sql, parameterMappings, parameterObject);
+  }
+
+}
+```
+
+Executor组件与数据库交互，除了需要参数映射信息外，还需要参数信息。因此，Executor组件并不是直接通过StaticSqlSource对象完成数据库操作的，而是与BoundSql交互。
+
+```java
+public class BoundSql {
+  // Mapper解析后的sql
+  private final String sql;
+  // Mapper参数映射信息
+  private final List<ParameterMapping> parameterMappings;
+  // Mapper参数对象
+  private final Object parameterObject;
+  // 额外参数信息，包括<bind>标签绑定的参数，内置参数
+  private final Map<String, Object> additionalParameters;
+  // 参数对象对应的MetaObject对象
+  private final MetaObject metaParameters;
+
+  public BoundSql(Configuration configuration, String sql, List<ParameterMapping> parameterMappings,
+      Object parameterObject) {
+    this.sql = sql;
+    this.parameterMappings = parameterMappings;
+    this.parameterObject = parameterObject;
+    this.additionalParameters = new HashMap<>();
+    this.metaParameters = configuration.newMetaObject(additionalParameters);
+  }
+  ...
+}
+```
+
+BoundSql除了封装了Mapper解析后的SQL语句和参数映射信息外，还封装了Mapper调用时传入的参数对象。
+
+🔖  Mapper具体是什么对象？
+
+
+
+### 9.3　LanguageDriver详解
+
+SQL配置信息到SqlSource对象的转换是由`LanguageDriver`组件来完成的。
+
+🔖
+
+### 9.4　SqlNode详解
+
+SqlNode用于**描述Mapper SQL配置中的SQL节点**，它是MyBatis框架实现动态SQL的基石。
+
+```java
+public interface SqlNode {
+  // 用于解析SQL节点，根据参数信息生成静态SQL内容
+  boolean apply(DynamicContext context);
+}
+```
+
+`DynamicContext`对象中封装了Mapper调用时传入的参数信息及MyBatis内置的_parameter和_databaseId参数。
+
+使用动态SQL时，使用`<if>`、`<where>`、`<trim>`等标签，这些标签都对应一种具体的SqlNode实现类：
+
+![](images/image-20230527142938573.png)
+
+- `IfSqlNode`：用于描述动态SQL中<if>标签的内容，`XMLLanguageDriver`在解析Mapper SQL配置生成SqlSource时，会对动态SQL中的<if>标签进行解析，将<if>标签转换为IfSqlNode对象。
+- `ChooseSqlNode`：`<choose>`
+- `ForEachSqlNode`：`<foreach>`
+- `MixedSqlNode`：用于描述一组SqlNode对象，通常一个Mapper配置是由多个SqlNode对象组成的，这些SqlNode对象通过MixedSqlNode进行关联，组成一个完整的动态SQL配置。
+- `SetSqlNode`：`<set>`
+- `WhereSqlNode`：`<where>`
+- `TrimSqlNode`：`<trim>`。在9.1节学习MyBatis动态SQL使用时，我们了解到<where>标签和<set>标签实际上是<trim>标签的一种特例，<where>标签和<set>标签实现的内容都可以使用<trim>标签来完成，因此WhereSqlNode和SetSqlNodel类设计为TrimSqlNode类的子类，属于特殊的TrimSqlNode。
+- `StaticTextSqlNode`：用于描述动态SQL中的静态文本内容。
+- `TextSqlNode`：该类与StaticTextSqlNode类不同的是，当静态文本中包含`${}`占位符时，说明${}需要在Mapper调用时将`${}`替换为具体的参数值。因此，使用TextSqlNode类来描述。
+- `VarDeclSqlNode`：`<bind>`
+
+
+
+一个Mapper配置：
+
+```java
+    <select id="getUserByEntity"  resultType="com.andyron.ch09.entity.User">
+        Select * From user Where 1=1
+        <if test="id != null">
+            AND id = #{id}
+        </if>
+        <if test="name != null">
+            AND name = #{name}
+        </if>
+        <if test="phone != null">
+            AND phone = #{phone}
+        </if>
+    </select>
+```
+
+转为SqlNode代码如下:
+
+```java
+// 构建SqlNode
+StaticTextSqlNode sn1 = new StaticTextSqlNode("Select * From user Where 1=1");
+SqlNode sn2 = new IfSqlNode(new StaticTextSqlNode(" AND id = #{id}"), "id != null");
+SqlNode sn3 = new IfSqlNode(new StaticTextSqlNode(" AND name = #{name}"), "name != null");
+SqlNode sn4 = new IfSqlNode(new StaticTextSqlNode(" AND phone = #{phone}"), "phone != null");
+SqlNode mixedSqlNode = new MixedSqlNode(Arrays.asList(sn1, sn2, sn3, sn4));
+
+// 创建参数对象
+Map<String, Object> paramMap = new HashMap<>();
+paramMap.put("id", "1");
+// 创建动态SQL解析上下文
+DynamicContext context = new DynamicContext(sqlSession.getConfiguration(), paramMap);
+// 调用SqlNode的apply()方法解析动态SQL
+mixedSqlNode.apply(context);
+// 调用DynamicContext对象的getSql()方法获取动态SQL解析后的SQL语句
+System.out.println(context.getSql());
+```
+
+生成的SQL内容：
+
+```mysql
+Select * From user Where 1=1  AND id = #{id}
+```
+
+
+
+IfSqlNode中维护了一个ExpressionEvaluator类的实例，该实例用于根据当前参数对象解析OGNL表达式。
+
+### 9.5　动态SQL解析过程
+
+🔖
+
+### 9.6　从源码角度分析`#{}`和`${}`的区别
+
+🔖
+
+
+
+使用#{}参数占位符时，占位符内容会被替换成“？”，然后通过PreparedStatement对象的setXXX()方法为参数占位符设置值；而`${}`参数占位符内容会被直接替换为参数值。使用#{}参数占位符能够有效避免SQL注入问题，所以我们可以优先考虑使用#{}占位符，当#{}参数占位符无法满足需求时，才考虑使用`${}`参数占位符。
+
+### 9.7 小结
+
+SqlSource用于描述通过XML文件或者Java注解配置中的SQL资源信息；
+
+LanguageDriver用于解析SQL配置，将SQL配置信息转换为SqlSource对象；
+
+SqlNode用于描述动态SQL中<if>、<where>等标签信息；
+
+LanguageDriver解析SQL配置时，会把<if>、<where>等动态SQL标签转换为SqlNode对象，封装在SqlSource中。而解析后的SqlSource对象会作为MappedStatement对象的属性保存在MappedStatement对象中。执行Mapper时，会根据传入的参数信息调用SqlSource对象的getBoundSql()方法获取BoundSql对象，这个过程就完成了将SqlNode对象转换为SQL语句的过程。
+
 
 
 ## 10 MyBatis插件原理及应用
 
+MyBatis框架允许用户通过自定义拦截器的方式改变SQL的执行行为，例如在SQL执行时追加SQL分页语法，从而达到简化分页查询的目的。用户自定义的**拦截器**也被称为**MyBatis插件**。
+
+### 10.1 MyBatis插件实现原理
+
+从插件的配置及解析过程开始分析。在MyBatis主配置文件中，可以通过`<plugins>`标签注册用户自定义的插件信息，例如：
+
+```xml
+<plugins>
+  <plugin interceptor="org.mybatis.example.ExamplePlugin">
+    <property name="someProperty" value="100"/>
+  </plugin>
+</plugins>
+```
+
+MyBatis的插件实际上就是一个==拦截器==，Configuration类中维护了一个`InterceptorChain`的属性，它是一个**拦截器链**，用于存放通过`<plugins>`标签注册的所有拦截器，Configration类中还定义了一个addInterceptor()方法，用于向拦截器链中添加拦截器。
+
+MyBatis框架在应用启动时会对`<plugins>`标签进行解析，在`XMLConfigBuilder`类的`pluginElement()`方法中解析`<plugins>`标签：
+
+```java
+  private void pluginElement(XNode parent) throws Exception {
+    if (parent != null) {
+      for (XNode child : parent.getChildren()) {
+        // 获取plugin标签的interceptor属性
+        String interceptor = child.getStringAttribute("interceptor");
+        // 获取拦截器属性（也就是<property>标签中的name和value属性），转换为Properties对象
+        Properties properties = child.getChildrenAsProperties();
+        // 创建拦截器实例
+        Interceptor interceptorInstance = (Interceptor) resolveClass(interceptor).getDeclaredConstructor()
+            .newInstance();
+        // 设置拦截器实例属性信息
+        interceptorInstance.setProperties(properties);
+        // 将拦截器实例添加到拦截器链中
+        configuration.addInterceptor(interceptorInstance);
+      }
+    }
+  }
+```
 
 
-## 11 MyBatis级联映射与懒加载
 
-懒加载，就是当我们在一个实体对象中关联其他实体对象时，如果不需要获取被关联的实体对象，则不需要为被关联的实体执行额外的查询操作，仅当调用当前实体的Getter方法获取被关联实体对象时，才会执行一次额外的查询操作。
+用户自定义的插件**只能**对MyBatis中的4种组件的方法进行拦截，这4种组件及方法如下：
+
+- `Executor (update, query, flushStatements, commit, rollback, getTransaction, close, isClosed)`
+- `ParameterHandler (getParameterObject, setParameters)`
+- `ResultSetHandler (handleResultSets, handleOutputParameters)`
+- `StatementHandler (prepare, parameterize, batch, update, query)`
+
+MyBatis使用工厂方法创建Executor、ParameterHandler、ResultSetHandler、StatementHandler组件的实例，其中一个原因是可以**根据用户配置的参数创建不同实现类的实例**；另一个比较重要的原因是**可以在工厂方法中执行拦截逻辑**。
+
+Configuration中的`newXXX()`方法就是对应的工厂方法，都调用了`InterceptorChain`对象的pluginAll()方法，这个方法返回对应的代理对象，拦截逻辑都是在代理对象中完成的。
+
+MyBatis中所有用户自定义的插件都必须实现`Interceptor`接口：
+
+```java
+public interface Interceptor {
+  // 定义拦截逻辑，该方法会在目标方法调用时执行
+  // Invocation对象中封装了目标对象的方法及参数信息
+  Object intercept(Invocation invocation) throws Throwable;
+
+  // 用于创建Executor、ParameterHandler、ResultSetHandler或StatementHandler的代理对象，
+  // 该方法的参数即为Executor、ParameterHandler、ResultSetHandler或StatementHandler组件的实例
+  default Object plugin(Object target) {
+    return Plugin.wrap(target, this);
+  }
+  // 用于设置插件的属性值
+  default void setProperties(Properties properties) {
+    // NOP
+  }
+}
+```
+
+`Invocation`类中封装了**目标对象、目标方法及参数信息**，我们可以通过Invocation对象获取目标对象（Executor、ParameterHandler、ResultSetHandler或StatementHandler）的所有信息。另外，Invocation类中提供了一个proceed()方法，该方法用于执行目标方法的逻辑。所以在自定义插件类中，拦截逻辑执行完毕后一般都需要调用proceed()方法执行目标方法的原有逻辑。
+
+```java
+public class Invocation {
+
+  // 目标对象，即Executor、ParameterHandler、ResultSetHandler或StatementHandler的实例
+  private final Object target;
+  // 目标方法，即拦截的方法
+  private final Method method;
+  // 目标方法的参数
+  private final Object[] args;
+
+  public Invocation(Object target, Method method, Object[] args) {
+    this.target = target;
+    this.method = method;
+    this.args = args;
+  }
+
+  public Object getTarget() {
+    return target;
+  }
+
+  public Method getMethod() {
+    return method;
+  }
+
+  public Object[] getArgs() {
+    return args;
+  }
+
+  // 执行目标方法
+  public Object proceed() throws InvocationTargetException, IllegalAccessException {
+    return method.invoke(target, args);
+  }
+}
+```
+
+
+
+为了便于用户创建Executor、ParameterHandler、ResultSetHandler或StatementHandler实例的代理对象，MyBatis中提供了一个`Plugin`工具类：
+
+```java
+public class Plugin implements InvocationHandler {
+
+  // 目标对象，即Executor、ParameterHandler、ResultSetHandler或StatementHandler的实例
+  private final Object target;
+  // 用户自定义拦截器实例
+  private final Interceptor interceptor;
+  // Intercepts注解指定的方法
+  private final Map<Class<?>, Set<Method>> signatureMap;
+
+  private Plugin(Object target, Interceptor interceptor, Map<Class<?>, Set<Method>> signatureMap) {
+    this.target = target;
+    this.interceptor = interceptor;
+    this.signatureMap = signatureMap;
+  }
+  ...
+    @Override
+  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    try {
+      // 如果该方法是Intercepts注解指定的方法，则调用拦截器实例的intercept()方法执行拦截逻辑
+      Set<Method> methods = signatureMap.get(method.getDeclaringClass());
+      if (methods != null && methods.contains(method)) {
+        return interceptor.intercept(new Invocation(target, method, args));
+      }
+      return method.invoke(target, args);
+    } catch (Exception e) {
+      throw ExceptionUtil.unwrapThrowable(e);
+    }
+  }
+  ...
+}
+   
+```
+
+Plugin类实现了InvocationHandler接口，即采用JDK内置的动态代理方式创建代理对象。
+
+
+
+🔖
+
+![](images/image-20230527190525943.png)
+
+如图10-1所示，SqlSession获取Executor实例的过程如下：
+
+1. SqlSession中会调用Configuration类提供的newExecutor()工厂方法创建Executor对象。
+2. Configuration类中通过一个InterceptorChain对象维护了用户自定义的拦截器链。newExecutor()工厂方法中调用InterceptorChain对象的pluginAll()方法。
+3. InterceptorChain对象的pluginAll()方法中会调用自定义拦截器的plugin()方法。
+4. 自定义拦截器的plugin()方法是由我们来编写的，通常会调用Plugin类的wrap()静态方法创建一个代理对象。
+
+SqlSession获取到的Executor实例实际上已经是一个动态代理对象了。
+
+如图10-2所示，当我们调用SqlSession对象的selectOne()方法执行查询操作时，大致会经历下面几个过程：
+
+1. SqlSession操作数据库需要依赖于Executor组件，SqlSession会调用Configuration对象的newExecutor()方法获取Executor的实例。
+2. SqlSession获取到的是Executor组件的代理对象，执行查询操作时会调用代理对象的query()方法。
+3. 按照JDK动态代理机制，调用Executor代理对象的query()方法时，会调用Plugin类的invoke()方法。
+4. Plugin类的invoke()方法中会调用自定义拦截器对象的intercept()方法执行拦截逻辑。
+5. 自定义拦截器对象的intercept()方法调用完毕后，调用目标Executor对象的query()方法。
+6. 所有操作执行完毕后，会将查询结果返回给SqlSession对象。
+
+![](images/image-20230527190816473.png)
+
+### 10.2 自定义一个分页插件
+
+分页查询实现方式一般有两种：
+
+- 第一种是从数据库中查询出所有满足条件的数据，然后通过应用程序进行分页处理，这种方式在数据量过大时效率比较低，而且可能会造成内存溢出，所以不太常用；
+- 另一种是通过数据库提供的分页语句进行**物理分页**，这种方式效率较高且查询数据量较少，所以是一种比较常用的分页方式。
+
+🔖
+
+### 10.3 自定义慢SQL统计插件
+
+🔖
+
+## 11 MyBatis级联映射与懒加载🔖
+
+MyBatis其中一个比较强大的功能是**支持查询结果级联映射**，可以很轻松地实现一对多、一对一或者多对多关联查询。
+
+甚至可以利用级联映射实现==懒加载==，所谓的懒加载就是当我们在一个实体对象中关联其他实体对象时，如果不需要获取被关联的实体对象，则不需要为被关联的实体执行额外的查询操作，仅当调用当前实体的Getter方法获取被关联实体对象时，才会执行一次额外的查询操作。
+
+### 11.1 MyBatis级联映射详解
+
+#### 一对多关联映射
+
+
+
+除了可以通过`<collection>`标签关联一个外部定义的Mapper来完成一对多关联查询外，MyBatis还支持通过JOIN子句实现一对多查询
+
+
+
+#### 一对一关联映射
+
+
+
+
+
+#### Discriminator详解
+
+MyBatis中的Discriminator类似于Java中的switch语法，能够根据数据库记录中某个字段的值映射到不同的ResultMap。
+
+
+
+### 11.2 MyBatis懒加载机制
+
+MyBatis的级联映射可以通过两种方式实现，其中一种方式是为实体的属性关联一个外部的查询Mapper，这种情况下，MyBatis实际上为实体的属性执行一次额外的查询操作；另一种方式是通过JOIN查询来实现，这种方式需要为实体关联的其他实体对应的属性配置映射关系，通过JOIN查询方式只需要一次查询即可。
+
+
+
+`lazyLoadingEnabled`参数值为true时表示开启懒加载，否则表示不开启懒加载。`aggressiveLazyLoading`参数用于控制ResultMap默认的加载行为，参数值为false表示ResultMap默认的加载行为为懒加载，否则为积极加载。
+
+### 11.3 MyBatis级联映射实现原理
+
+#### ResultMap详解
+
+MyBatis是一个**半自动化的ORM框架**，可以将数据库中的记录转换为Java实体对象，但是Java实体属性通常采用驼峰命名法，而数据库字段习惯采用下画线分割命名法，因此需要用户指定Java实体属性与数据库表字段之间的映射关系。
+
+
+
+#### ResultMap解析过程
+
+MyBatis在启动时，所有配置信息都会被转换为Java对象，通过<resultMap>标签配置的结果集映射信息也不例外。通过`ResultMap`类描述`<resultMap>`标签的配置信息
+
+
+
+#### 级联映射实现原理
+
+
+
+
+
+### 11.4 懒加载实现原理
 
 
 
@@ -1909,3 +2821,55 @@ MyBatis提供了一级缓存和二级缓存，其中一级缓存基于SqlSession
 
 
 ## 13 MyBatis Spring的实现原理
+
+### 13.1 Spring中的一些概念
+
+#### 1．BeanDefinition
+
+
+
+#### 2．BeanDefinitionRegistry
+
+
+
+#### 3．BeanFactory
+
+
+
+#### 4．BeanFactoryPostProcessor
+
+
+
+#### 5．ImportBeanDefinitionRegistrar
+
+
+
+#### 6．BeanPostProcessor
+
+
+
+#### 7．ClassPathBeanDefinitionScanner
+
+
+
+#### 8．FactoryBean
+
+FactoryBean是Spring中的工厂Bean，通常用于处理Spring中配置较为复杂或者由动态代理生成的Bean实例。
+
+
+
+
+
+### 13.2 Spring容器的启动过程
+
+![Spring容器的启动过程](images/Spring容器的启动过程.jpg)
+
+
+
+### 13.3 Mapper动态代理对象注册过程
+
+
+
+
+
+### 13.4 MyBatis整合Spring事务管理

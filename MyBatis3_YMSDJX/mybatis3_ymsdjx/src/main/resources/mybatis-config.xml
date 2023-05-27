@@ -26,5 +26,6 @@
 
     <mappers>
         <mapper resource="com/andyron/ch04/mapper/UserMapper.xml" />
+        <mapper resource="com/andyron/ch09/mapper/UserMapper.xml" />
     </mappers>
 </configuration>
