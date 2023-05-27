@@ -217,6 +217,8 @@ public class XMLMapperBuilder extends BaseBuilder {
       boolean readWrite = !context.getBooleanAttribute("readOnly", false);
       boolean blocking = context.getBooleanAttribute("blocking", false);
       Properties props = context.getChildrenAsProperties();
+      // 在获取<cache>标签的所有属性信息后，调用MapperBuilderAssistant对象的userNewCache()方法创建二级缓存实例，
+      // 然后通过MapperBuilderAssistant的currentCache属性保存二级缓存对象的引用
       builderAssistant.useNewCache(typeClass, evictionClass, flushInterval, size, readWrite, blocking, props);
     }
   }

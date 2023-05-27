@@ -200,11 +200,16 @@ public class XMLConfigBuilder extends BaseBuilder {
   private void pluginElement(XNode parent) throws Exception {
     if (parent != null) {
       for (XNode child : parent.getChildren()) {
+        // 获取plugin标签的interceptor属性
         String interceptor = child.getStringAttribute("interceptor");
+        // 获取拦截器属性（也就是<property>标签中的name和value属性），转换为Properties对象
         Properties properties = child.getChildrenAsProperties();
+        // 创建拦截器实例
         Interceptor interceptorInstance = (Interceptor) resolveClass(interceptor).getDeclaredConstructor()
             .newInstance();
+        // 设置拦截器实例属性信息
         interceptorInstance.setProperties(properties);
+        // 将拦截器实例添加到拦截器链中
         configuration.addInterceptor(interceptorInstance);
       }
     }

@@ -103,11 +103,14 @@ public final class LogFactory {
 
   private static void setImplementation(Class<? extends Log> implClass) {
     try {
+      // 获取日志实现类的Constructor对象
       Constructor<? extends Log> candidate = implClass.getConstructor(String.class);
+      // 根据日志实现类创建Log实例
       Log log = candidate.newInstance(LogFactory.class.getName());
       if (log.isDebugEnabled()) {
         log.debug("Logging initialized using '" + implClass + "' adapter.");
       }
+      // 记录当前使用的日志实现类的Constructor对象
       logConstructor = candidate;
     } catch (Throwable t) {
       throw new LogException("Error setting Log implementation.  Cause: " + t, t);

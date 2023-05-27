@@ -44,6 +44,7 @@ public interface Cache {
   /**
    * @return The identifier of this cache
    */
+  // 通常情况下缓存的Id为Mapper的命名空间名称
   String getId();
 
   /**
@@ -52,6 +53,7 @@ public interface Cache {
    * @param value
    *          The result of a select.
    */
+  // 将一个Java对象添加到缓存中，第一个参数为缓存的Key，即CacheKey的实例；第二个参数为需要缓存的对象
   void putObject(Object key, Object value);
 
   /**
@@ -73,6 +75,7 @@ public interface Cache {
    *
    * @return Not used
    */
+  // 将一个对象从缓存中移除
   Object removeObject(Object key);
 
   /**
