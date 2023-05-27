@@ -36,4 +36,5 @@
         from user
         where phone = ${phone}
     </select>
+
 </mapper>
