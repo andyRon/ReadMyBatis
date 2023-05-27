@@ -19,8 +19,11 @@ package org.apache.ibatis.scripting.xmltags;
  * @author Clinton Begin
  */
 public class IfSqlNode implements SqlNode {
+  // evaluator属性用于解析OGNL表达式 // TODO
   private final ExpressionEvaluator evaluator;
+  // 保持<if>标签的test属性内容
   private final String test;
+  // <if>标签内的sql内容
   private final SqlNode contents;
 
   public IfSqlNode(SqlNode contents, String test) {

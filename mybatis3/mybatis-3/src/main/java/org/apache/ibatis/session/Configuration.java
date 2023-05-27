@@ -733,6 +733,7 @@ public class Configuration {
     } else {
       executor = new SimpleExecutor(this, transaction);
     }
+    // 如果cacheEnabled参数值为true，则使用CachingExecutor对Executor进行装饰
     if (cacheEnabled) {
       executor = new CachingExecutor(executor);
     }

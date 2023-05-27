@@ -27,7 +27,9 @@ import org.apache.ibatis.session.Configuration;
  */
 public class StaticSqlSource implements SqlSource {
 
+  // Mapper解析后的sql
   private final String sql;
+  // 参数映射信息
   private final List<ParameterMapping> parameterMappings;
   private final Configuration configuration;
 

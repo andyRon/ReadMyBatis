@@ -31,8 +31,11 @@ import org.apache.ibatis.util.MapUtil;
  */
 public class Plugin implements InvocationHandler {
 
+  // 目标对象，即Executor、ParameterHandler、ResultSetHandler或StatementHandler的实例
   private final Object target;
+  // 用户自定义拦截器实例
   private final Interceptor interceptor;
+  // Intercepts注解指定的方法
   private final Map<Class<?>, Set<Method>> signatureMap;
 
   private Plugin(Object target, Interceptor interceptor, Map<Class<?>, Set<Method>> signatureMap) {
@@ -54,6 +57,7 @@ public class Plugin implements InvocationHandler {
   @Override
   public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
     try {
+      // 如果该方法是Intercepts注解指定的方法，则调用拦截器实例的intercept()方法执行拦截逻辑
       Set<Method> methods = signatureMap.get(method.getDeclaringClass());
       if (methods != null && methods.contains(method)) {
         return interceptor.intercept(new Invocation(target, method, args));
