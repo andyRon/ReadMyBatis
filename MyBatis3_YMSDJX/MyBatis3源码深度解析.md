@@ -3,11 +3,11 @@ MyBatis3源码深度解析
 
 https://book.douban.com/subject/34836563/
 
-优化了SQL配置方式，引用OGNL表达式来支持动态SQL配置
+优化了SQL配置方式，引用==OGNL==表达式来支持动态SQL配置
 
-引入了SQL Mapper的概念
+引入了==SQL Mapper==的概念
 
-将XML文件中的SQL配置与一个Java接口进行绑定，SQL配置的命名空间对应Java接口的完全限定名，而具体的每个SQL语句的配置对应Java接口中的一个方法，建立绑定后，可以通过调用Java接口中定义的方法来执行XML文件中配置的SQL语句。
+将XML文件中的==SQL配置==与一个==Java接口==进行绑定，==SQL配置的命名空间==对应==Java接口的完全限定名==，而具体的每个==SQL语句==的配置对应==Java接口中的一个方法==，建立绑定后，可以通过调用Java接口中定义的方法来执行XML文件中配置的SQL语句。
 
 
 
@@ -17,13 +17,31 @@ https://github.com/rongbo-j/mybatis-book
 
 ## 1 搭建MyBatis源码环境
 
-https://github.com/mybatis/mybatis-3
+### MyBatis 3简介
 
-https://github.com/mybatis/spring
+MyBatis能够流行起来的主要原因有以下几点：
 
-https://github.com/mybatis/parent
+1. 消除了大量的JDBC冗余代码，包括参数设置、结果集封装等。
+2. SQL语句可控制，方便查询优化，使用更加灵活。
+3. 学习成本比较低，对于新用户能够快速学习使用。
+4. 提供了与主流IoC框架Spring的集成支持。
+5. 引入缓存机制，提供了与第三方缓存类库的集成支持。
+
+### 获取MyBatis源码
+
+- https://github.com/mybatis/mybatis-3
+
+- MyBatis与Spring进行整合项目mybatis-spring：https://github.com/mybatis/spring
+
+- https://github.com/mybatis/parent
+
+mybatis和mybatis-spring项目都依赖于一个公共的parent项目，该项目中没有任何代码，只是定义了一些公共的属性及项目依赖的插件信息。
 
 
+
+三个项目全部克隆到本地后，需要放在同一个目录下：
+
+![](images/image-20231229182916129.png)
 
 ### HSQLDB数据库简介
 
@@ -41,7 +59,7 @@ MyBatis源码中提供了大量的单元测试用例，都使用了HSQLDB的内�
 
 
 
-MyBatis提供的两个工具类`ScriptRunner`和`SqlRunner`，分别用于批量执行数据库脚本和对数据库进行增删改查操作
+MyBatis提供的两个工具类`ScriptRunner`和`SqlRunner`，分别用于==批量执行数据库脚本==和==对数据库进行增删改查==操作。
 
 
 
@@ -53,9 +71,20 @@ MyBatis框架对JDBC做了轻量级的封装
 
 ### 2.1 JDBC API简介
 
-**==JDBC（Java Database Connectivity）==**是Java语言中提供的**==访问关系型数据的接口==**🔖非关系。在Java编写的应用中，使用JDBC API可以==执行SQL语句、检索SQL执行结果以及将数据更改写回到底层数据源==。JDBC API也可以用于==分布式、异构的环境中与多个数据源交互==。
+**==JDBC（Java Database Connectivity）==**是Java语言中提供的**==访问关系型数据的接口==**。在Java编写的应用中，使用JDBC API可以==执行SQL语句、检索SQL执行结果以及将数据更改写回到底层数据源==。JDBC API也可以用于==分布式、异构的环境中与多个数据源交互==。
 
-当然，使用JDBC访问其他数据源（例如文件系统或者面向对象系统等）也是有可能的，只要该数据源提供JDBC规范驱动程序即可。
+当然，使用JDBC访问其他数据源（例如文件系统或者面向对象系统等）也是有可能的，只要该数据源提供**JDBC规范驱动程序**即可。
+
+> Java程序通过jdbc这个规范（接口）来与第三方数据库厂商进行交互，根据jdbc规范根据具体的实现驱动代码，不同厂商数据库的驱动代码不同，但是方法是相同的。jdbc是一组接口，最终实现是由各个数据库厂商（jar）来实现的，是一种面向接口编程。无论是MySQL、Oracle、SQL Server还是其他关系型数据库系统，只需要切换对应的数据库驱动jar包。
+>
+> jdbc的主要概念：
+>
+> 1. ==数据库驱动程序（Database Driver）==：数据库驱动程序是实现JDBC接口的软件组件，它允许Java应用程序与特定类型的数据库进行通信。不同的数据库供应商提供不同的驱动程序实现。
+> 2. ==连接（Connection）==：连接是通过JDBC与数据库建立的会话。它表示Java应用程序与数据库之间的通信通道。使用连接，应用程序可以执行SQL语句并获取结果。
+> 3. ==语句（Statement）==：语句是在数据库上执行的SQL命令。JDBC提供了多种语句类型，包括普通语句（Statement）、预编译语句（PreparedStatement）和可调用语句（CallableStatement）等。应用程序可以使用这些语句来执行查询、更新、插入和删除等操作。
+> 4. ==结果集（ResultSet）==：结果集是从数据库检索到的数据集合。它是通过执行查询语句获得的，并且提供了一种迭代的方式来遍历和访问结果。
+> 5. ==批处理（Batch Processing）==：JDBC支持批处理操作，它允许一次执行多个SQL语句。这对于批量插入、更新或删除数据非常有用，可以提高性能和效率。
+> 6. ==事务（Transaction）==：事务是一组数据库操作，它们要么全部成功执行，要么全部回滚（撤销）。JDBC支持事务管理，可以通过开始事务、提交事务或回滚事务来确保数据的一致性和完整性。
 
 使用JDBC操作数据源大致步骤：
 
@@ -76,9 +105,9 @@ MyBatis框架对JDBC做了轻量级的封装
    DriverManager.getConnection("jdbc:hsqldb:mem:mybatis", "sa", "");
    ```
 
-2. `DataSource1：接口，JDBC 2.0。 
+2. `DataSource`：接口，JDBC 2.0。 
 
-比DriverManager更受欢迎，因为它提供了更多底层数据源相关的细节，而且对应用来说，不需要关注JDBC驱动的实现。一个DataSource对象的属性被设置后，它就代表一个特定的数据源。🔖
+比DriverManager更受欢迎，因为它提供了**更多底层数据源相关的细节**，而且对应用来说，不需要关注JDBC驱动的实现。一个DataSource对象的属性被设置后，它就代表一个特定的数据源。
 
 JDBC API中只提供了DataSource接口，没有提供DataSource的具体实现，DataSource具体的实现由JDBC驱动程序提供。
 
@@ -123,7 +152,7 @@ Statement接口可以理解SQL语句的**执行器**，其中`executeQuery()`方
 
 #### 使用JDBC操作数据库
 
-
+`ResultSet`对象的`getMetaData()`方法获取结果集元数据信息，该方法返回一个`ResultSetMetaData`对象，可以通过这个对象获取结果集中所有的字段名称、字段数量、字段数据类型等信息。
 
 ### 2.2 JDBC API中的类与接口
 
@@ -193,16 +222,17 @@ java.sql.ResultSet
 java.sal.ResultSetMetaData
 ```
 
-大致可以分为数据类型接口、枚举类、驱动相关类和接口、异常类、API相关。
+大致可以分为**数据类型接口、枚举类、驱动相关类和接口、异常类、API相关**。
 
-其中API相关对于开发人员最重要，这些接口都继承了`java.sql.Wrapper`接口。
+其中API相关对于开发人员最重要，这些接口都继承了`java.sql.Wrapper`接口。【wrapper n. 包装材料；包装纸；书皮】
+
+> 许多JDBC驱动程序提供超越传统JDBC的扩展，为了符合JDBC API规范，驱动厂商可能会在原始类型的基础上进行包装，Wrapper接口为使用JDBC的应用程序提供访问原始类型的功能，从而使用JDBC驱动中一些**非标准的特性**。
 
 ```java
 public interface Wrapper {
     <T> T unwrap(java.lang.Class<T> iface) throws java.sql.SQLException;
     boolean isWrapperFor(java.lang.Class<?> iface) throws java.sql.SQLException;
 }
-
 ```
 
 `unwrap()`方法用于返回未经过包装的JDBC驱动原始类型实例，可以通过该实例调用JDBC驱动中提供的非标准的方法。
@@ -218,7 +248,7 @@ if (stmt.isWrapperFor(clzz)) {
 }
 ```
 
-👆🏻，Oracle数据库驱动中提供了一些非JDBC标准的方法，如果需要使用这些非标准的方法，则可以调用Wrapper接口提供的unwrap()方法获取Oracle驱动的原始类型，然后调用原始类型提供的非标准方法就可以访问Oracle数据库特有的一些特性了。
+👆🏻，Oracle数据库驱动中提供了一些非JDBC标准的方法，如果需要使用这些非标准的方法，则可以调用Wrapper接口提供的unwrap()方法获取Oracle驱动的原始类型，然后调用原始类型提供的非标准方法就可以访问Oracle数据库特有的一些特性了。🔖
 
 
 
@@ -256,7 +286,7 @@ javax.sql.XADatasource
 
 相对于`DriverManager`，JDBC 2.0提供的`DataSource`接口是一个更好的连接数据源的方式。两个优势：
 
-- 首先，应用程序不需要像使用DriverManager一样对加载的数据库驱动程序信息进行**硬编码**。开发人员可以选择通过**JNDI**注册这个数据源对象，然后在程序中使用一个逻辑名称来引用它，JNDI会自动根据我们给出的名称找到与这个名称绑定的DataSource对象。然后我们就可以使用这个DataSource对象来建立和具体数据库的连接了。🔖
+- 首先，应用程序不需要像使用DriverManager一样对加载的数据库驱动程序信息进行**硬编码**。开发人员可以选择通过**JNDI**注册这个数据源对象，然后在程序中使用一个逻辑名称来引用它，JNDI会自动根据我们给出的名称找到与这个名称绑定的DataSource对象。然后我们就可以使用这个DataSource对象来建立和具体数据库的连接了。❤️
 - 其次，体现在**连接池和分布式事务**上。连接池通过对==连接的复用==，而不是每次需要操作数据源时都新建一个物理连接来显著地提高程序的效率，适用于任务繁忙、负担繁重的企业级应用。
 
 
@@ -267,13 +297,19 @@ javax.sql.XADatasource
 
 `javax.sql.PooledConnection`和`Connection`的不同之处在于，它提供了==连接池管理的句柄==。一个PooledConnection表示与数据源建立的物理连接，该连接在应用程序使用完后可以回收而不用关闭它，从而减少了与数据源建立连接的次数。
 
-🔖
+应用程序开发人员一般不会直接使用PooledConnection接口，而是通过一个管理连接池的中间层基础设施使用。当应用程序调用DataSource对象的getConnection()方法时，它返回一个Connection对象。但是当我们使用数据库连接池时（例如Druid），该Connection对象实际上是到PooledConnection对象的句柄，这是一个物理连接。==连接池管理器==（通常为应用程序服务器）维护所有的PooledConnection 对象资源。如果在池中存在可用的PooledConnection对象，则连接池管理器返回作为到该物理连接的句柄的Connection对象。如果不存在可用的PooledConnection对象，则连接池管理器调用`ConnectionPoolDataSource`对象的getConnection()方法创建新的物理连接。
+
+连接池实现模块可以调用PooledConnection对象的`addConnectionEventListener()`将自己注册成为一个PooledConnection对象的监听者，当数据库连接需要重用或关闭的时候会产生一个ConnectionEvent对象，它表示一个连接事件，连接池实现模块将会得到通知。🔖
+
+javax.sql.PooledConnection与java.sql.Connection之间的关系:
 
 ![](images/image-20230525121138502.png)
 
 
 
-另外，javax.sql包中还包含`XADataSource`、`XAResource`和`XAConnection`接口，这些接口提供了分布式事务的支持，具体由JDBC驱动来实现。更多分布式事务相关细节可参考[**JTA（Java Transaction API）**规范文档](https://download.oracle.com/otndocs/jcp/jta-1.1-spec-oth-JSpec/?submit=Download)。
+另外，javax.sql包中还包含`XADataSource`、`XAResource`和`XAConnection`接口，这些接口提供了分布式事务的支持，具体由JDBC驱动来实现。更多分布式事务相关细节可参考[JTA（Java Transaction API）规范文档](https://download.oracle.com/otndocs/jcp/jta-1.1-spec-oth-JSpec/?submit=Download)。
+
+XAConnection接口继承了PooledConnection接口，因此它具有所有PooledConnection的特性，我们可以调用XAConnection实例的getConnection()方法获取java.sql.Connection对象，它们与java.sql.Connection之间的关系：
 
 ![](images/image-20230525121239798.png)
 
@@ -291,7 +327,7 @@ RowSet默认是一个==可滚动、可更新、可序列化==的结果集，而�
 
 ### 2.3 Connection详解
 
-一个Connection对象表示通过JDBC驱动与数据源建立的连接，这里的数据源可以是关系型数据库管理系统（DBMS）、文件系统或者其他通过JDBC驱动访问的数据。
+一个Connection对象表示通过JDBC驱动与数据源建立的连接，这里的数据源可以是==关系型数据库管理系统（DBMS）、文件系统或者其他通过JDBC驱动访问的数据==。
 
 使用JDBC API的应用程序可能需要维护多个Connection对象，一个Connection对象可能访问多个数据源，也可能访问单个数据源。
 
@@ -757,15 +793,114 @@ JDBC API中的事务管理符合SQL:2003规范，主要包含下面几个概念�
 - 事务隔离级别
 - 保存点
 
+#### 事务边界与自动提交
+
+何时开启一个新的事务是由JDBC驱动或数据库隐式决定的。虽然一些数据库实现了通过begin transaction语句显式地开始事务，但是JDBC API中没有对应的方法支持这样做。通常情况下，当SQL语句需要开启事务但是目前还没有事务时会开启一个新的事务。一个特定的SQL语句是否需要事务由SQL:2003规范指定。
+
+Connection对象的autoCommit属性决定什么时候结束一个事务。启用自动提交后，会在每个SQL语句执行完毕后自动提交事务。当Connection对象创建时，默认情况下，事务自动提交是开启的。Connection接口中提供了一个setAutoCommit()方法，可以禁用事务自动提交。此时，需要显式地调用Connection接口提供commit()方法提交事务，或者调用rollback()方法回滚事务。禁用事务自动提交适用于需要将多个SQL语句作为一个事务提交或者事务由应用服务器管理。
+
+#### 事务隔离级别
+
+事务隔离级别用于**指定事务中对数据的操作对其他事务的“可见性”**。
+
+不同的事务隔离级别能够解决并发访问数据带来的不同的并发问题，而且会直接影响并发访问效率。
+
+数据并发访问可能会出现以下几种问题：
+
+- ==脏读==　这种情况发生在事务中允许读取未提交的数据。例如，A事务修改了一条数据，但是未提交修改，此时A事务对数据的修改对其他事务是可见的，B事务中能够读取A事务未提交的修改。一旦A事务回滚，B事务中读取的就是不正确的数据。
+
+- ==不可重复读==　这种情况发生在如下场景：
+  - A事务中读取一行数据。
+  - B事务中修改了该行数据。
+  - A事务中再次读取该行数据将得到不同的结果。
+
+- ==幻读==　这种情况发生在如下场景：
+  - A事务中通过WHERE条件读取若干行。
+  - B事务中插入了符合条件的若干条数据。
+  - A事务中通过相同的条件再次读取数据时将会读取到B事务中插入的数据。
+
+JDBC遵循SQL:2003规范，定义了4种事务隔离级别，另外增加了一种表示不支持事务：
+
+- `TRANSACTION_NONE`：表示驱动不支持事务，这意味着它是不兼容JDBC规范的驱动程序。
+- `TRANSACTION_READ_UNCOMMITTED`：允许事务读取未提交更改的数据，这意味着可能会出现脏读、不可重复读、幻读等现象。
+- `TRANSACTION_READ_COMMITTED`：表示在事务中进行的任何数据更改，在提交之前对其他事务是不可见的。这样可以防止脏读，但是不能解决不可重复读和幻读的问题。
+- `TRANSACTION_REPEATABLE_READ`：该事务隔离级别能够解决脏读和不可重复读问题，但是不能解决幻读问题。
+- `TRANSACTION_SERIALIZABLE`：该事务隔离级别下，所有事务串行执行，能够有效解决脏读、不可重复读和幻读问题，但是并发效率较低。
+
+🔖
+
+#### 事务中的保存点
+
+保存点通过在事务中标记一个中间的点来对事务进行更细粒度的控制，一旦设置保存点，事务就可以回滚到保存点，而不影响保存点之前的操作。
+
+DatabaseMetaData接口提供了`supportsSavepoints()`方法，用于判断JDBC驱动是否支持保存点。
+
+Connection接口中提供了`setSavepoint()`方法用于在当前事务中设置保存点，如果setSavepoint()方法在事务外调用，则调用该方法后会在setSavepoint()方法调用处开启一个新的事务。setSavepoint()方法的返回值是一个`Savepoint`对象，该对象可作为Connection对象rollback()方法的参数，用于回滚到对应的保存点。
+
+🔖
+
+
+
 ## 3 MyBatis常用工具类
 
 ### 3.1 使用SQL类生成语句
 
+mybatis的SQL工具类`SQL`的好处：
 
+- 很好地避免字符串拼接过程中缺少空格或者偶然间重复出现的AND关键字导致的SQL语句不正确。
+- 方便地在Java代码中根据条件动态地拼接SQL语句。
 
 ![SQL工具类的方法及作用](images/SQL工具类的方法及作用.jpg)
 
-`AbstractSQL`
+SQL继承至`AbstractSQL`类，只重写了该类的getSelf()方法，所有的功能由AbstractSQL类完成，它有一个内部类`SQLStatement`用于描述一个SQL语句。
+
+SQLStatement类中还维护了一系列的ArrayList属性，当调用SELECT()、UPDATE()等方法时，这些方法的参数内容会记录在这些ArrayList对象中，SQLStatement类中的属性如下：
+
+```java
+  // 用于描述一个SQL语句
+  private static class SQLStatement {
+    // SQL语句的类型
+    public enum StatementType {
+
+      DELETE,
+
+      INSERT,
+
+      SELECT,
+
+      UPDATE
+
+    }
+
+    StatementType statementType;
+    // 用于记录SQL实例中SELECT()、UPADTE()等方法调用参数
+    List<String> sets = new ArrayList<>();
+    List<String> select = new ArrayList<>();
+    List<String> tables = new ArrayList<>();
+    List<String> join = new ArrayList<>();
+    List<String> innerJoin = new ArrayList<>();
+    List<String> outerJoin = new ArrayList<>();
+    List<String> leftOuterJoin = new ArrayList<>();
+    List<String> rightOuterJoin = new ArrayList<>();
+    List<String> where = new ArrayList<>();
+    List<String> having = new ArrayList<>();
+    List<String> groupBy = new ArrayList<>();
+    List<String> orderBy = new ArrayList<>();
+    List<String> lastList = new ArrayList<>();
+    List<String> columns = new ArrayList<>();
+    List<List<String>> valuesList = new ArrayList<>();
+    // 是否包含distinct关键字
+    boolean distinct;
+    String offset;
+    String limit;
+    LimitingRowsStrategy limitingRowsStrategy = LimitingRowsStrategy.NOP;
+    
+    ...
+```
+
+
+
+AbstrastSQL类重写了toString()方法，该方法中会调用SQLStatement对象的sql()方法生成SQL字符串。sql()方法根据不同类型的sql调用不同方法，但最终都调用`sqlClause()`方法完成SQL语句的拼接：
 
 ```java
 		/**
