@@ -18,6 +18,7 @@ public class TestJDBC {
     @Test
     public void test1() throws SQLException {
         System.out.println(DbUtils.initData());
+//        System.out.println(System.getProperty("jdbc.drivers"));
     }
     @Test
     public void testDriverManager() {
@@ -25,6 +26,10 @@ public class TestJDBC {
             Connection conn = DbUtils.initData();
             Statement statement = conn.createStatement();
             ResultSet resultSet = statement.executeQuery("select * from user");
+
+//            DatabaseMetaData connMetaData = conn.getMetaData();
+//            System.out.println(connMetaData.toString());
+
             ResultSetMetaData metaData = resultSet.getMetaData();
             int columnCount = metaData.getColumnCount();
             while (resultSet.next()) {
