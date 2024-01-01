@@ -53,6 +53,7 @@ public class TextSqlNode implements SqlNode {
   }
 
   private GenericTokenParser createParser(TokenHandler handler) {
+    // 创建处理${param}类型的GenericTokenParser
     return new GenericTokenParser("${", "}", handler);
   }
 
@@ -66,6 +67,9 @@ public class TextSqlNode implements SqlNode {
       this.injectionFilter = injectionFilter;
     }
 
+    // 此处的content即${param}中的param,
+    // 此方法操作就是从参数集合里获得key=param对应的value，并返回该value
+    // 例如:content是tableName，对应的value就是sm_student
     @Override
     public String handleToken(String content) {
       Object parameter = context.getBindings().get("_parameter");
