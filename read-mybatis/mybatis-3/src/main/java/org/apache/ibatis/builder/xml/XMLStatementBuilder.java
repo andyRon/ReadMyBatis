@@ -35,6 +35,7 @@ import org.apache.ibatis.scripting.LanguageDriver;
 import org.apache.ibatis.session.Configuration;
 
 /**
+ * 从XML中构建statement
  * @author Clinton Begin
  */
 public class XMLStatementBuilder extends BaseBuilder {
@@ -55,6 +56,7 @@ public class XMLStatementBuilder extends BaseBuilder {
     this.requiredDatabaseId = databaseId;
   }
 
+  // 用来解析mapper映射文件中的<select>、<insert>、<update>、<delete>等标签
   public void parseStatementNode() {
     String id = context.getStringAttribute("id");
     String databaseId = context.getStringAttribute("databaseId");
